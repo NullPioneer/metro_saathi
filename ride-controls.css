@@ -3,6 +3,7 @@
 .line-scroll { padding-top: 48px; }
 .train-marker { position: absolute; z-index: 4; top: -37px; transform: translateX(-50%); font-size: 1.5rem; filter: drop-shadow(0 4px 8px rgba(0,0,0,.55)); animation: train-rock .7s ease-in-out infinite alternate; transition: left .9s ease-out; }
 .threshold-control { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 14px; color: var(--muted); font-size: .82rem; }
+.sensor-controls { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 9px; margin-bottom: 12px; }.sensor-controls label { display: grid; gap: 5px; color: var(--muted); font-size: .76rem; }.sensor-controls input { width: 100%; accent-color: var(--accent); }
 .crowd-alert { padding: 14px; border: 1px solid rgba(255,105,133,.55); border-radius: 14px; background: rgba(120,44,67,.4); color: #ffd7df; font-weight: 800; animation: alert-pulse 1.2s ease-in-out infinite; }
 .crowd-alert[hidden] { display: none; }
 @keyframes train-rock { to { transform: translateX(-50%) translateY(-2px) rotate(2deg); } }

@@ -122,7 +122,11 @@ function announce(station, force = false) {
 
 function handlePosition(position) {
   const { latitude, longitude, accuracy } = position.coords;
-  if (accuracy > 250 && state.currentPosition) return;
+  if (accuracy > 180) {
+    els.locationStatus.textContent = `Weak GPS · ±${Math.round(accuracy)} m`;
+    els.locationStatus.className = 'status-pill error';
+    return;
+  }
   state.currentPosition = { latitude, longitude };
   const rawNearest = findNearestStation(latitude, longitude, stations);
   if (state.stationIndex == null) {
@@ -309,21 +313,37 @@ function subscribeCrowd() {
   setInterval(refreshCrowd, 30000);
 }
 
-function motionPulse(event) {
-  const a = event.acceleration || event.accelerationIncludingGravity;
-  if (!a || !state.audio) return;
-  state.lastMotionEvent = performance.now();
-  els.motionStatus.textContent = 'Listening live';
-  els.motionStatus.className = 'status-pill live';
-  const raw = Math.hypot(a.x || 0, a.y || 0, a.z || 0);
-  state.motionBaseline = state.motionBaseline == null ? raw : state.motionBaseline * 0.92 + raw * 0.08;
-  const magnitude = Math.abs(raw - state.motionBaseline);
-  const visualIntensity = Math.min(10, magnitude * 2.2);
+function motionPulse(event, forcedMagnitude = null) {
+  if (!state.audio) return;
+  let magnitude = forcedMagnitude;
+  if (magnitude == null) {
+    const a = event.acceleration || event.accelerationIncludingGravity;
+    if (!a) return;
+    const vector = [a.x || 0, a.y || 0, a.z || 0];
+    state.lastMotionEvent = performance.now();
+    els.motionStatus.textContent = 'Listening live';
+    els.motionStatus.className = 'status-pill live';
+    if (!state.previousAcceleration) {
+      state.previousAcceleration = vector;
+      return;
+    }
+    magnitude = Math.hypot(
+      vector[0] - state.previousAcceleration[0],
+      vector[1] - state.previousAcceleration[1],
+      vector[2] - state.previousAcceleration[2],
+    );
+    state.previousAcceleration = vector;
+    state.motionNoise = state.motionNoise == null ? magnitude : state.motionNoise * 0.96 + magnitude * 0.04;
+  }
+  const visualIntensity = Math.min(10, magnitude * 9);
   state.motionSamples = [...(state.motionSamples || []), visualIntensity].slice(-240);
   els.motionIntensity.textContent = visualIntensity.toFixed(1);
   els.rhythmOrb.style.setProperty('--motion', `${1 + visualIntensity / 28}`);
   state.audio.master.gain.setTargetAtTime(0.025 + Math.min(magnitude, 5) * 0.006, state.audio.context.currentTime, 0.08);
-  if (magnitude < 0.85 || performance.now() - (state.lastPulse || 0) < 180) return;
+  const sensitivity = Number(els.motionSensitivity.value);
+  const manualThreshold = Math.max(0.035, 0.55 - sensitivity * 0.052);
+  const adaptiveThreshold = Math.max(manualThreshold, (state.motionNoise || 0) * 1.3);
+  if (forcedMagnitude == null && (magnitude < adaptiveThreshold || performance.now() - (state.lastPulse || 0) < 140)) return;
   const previousPulse = state.lastPulse;
   state.lastPulse = performance.now();
   state.beatCount = (state.beatCount || 0) + 1;
@@ -376,6 +396,8 @@ async function toggleMusic() {
     window.removeEventListener('devicemotion', state.motionHandler);
     await state.audio.context.close();
     state.audio = null;
+    state.previousAcceleration = null;
+    state.motionNoise = null;
     els.musicToggle.textContent = '▶ Start listening to the train';
     els.motionStatus.textContent = 'Sensor off';
     els.motionStatus.className = 'status-pill';
@@ -393,6 +415,8 @@ async function toggleMusic() {
   if (!AudioContext) return;
   const context = new AudioContext();
   state.lastMotionEvent = null;
+  state.previousAcceleration = null;
+  state.motionNoise = null;
   const master = context.createGain(); master.gain.value = 0.035; master.connect(context.destination);
   const composition = state.composition || { rootHz: 73.42, intervals: [1, 1.5], waveforms: ['triangle', 'sine'], label: 'Metro ambient' };
   const oscillators = [];
@@ -490,6 +514,13 @@ function bindEvents() {
     els.muteToggle.setAttribute('aria-pressed', String(state.voiceMuted));
   });
   els.musicToggle.addEventListener('click', toggleMusic);
+  els.testBeat.addEventListener('click', async () => {
+    if (!state.audio) await toggleMusic();
+    if (state.audio) {
+      motionPulse({}, 1.2);
+      els.motionHelp.textContent = 'Test beat played. Live beats use the phone’s 3-axis motion sensor.';
+    }
+  });
   els.aiCompose.addEventListener('click', composeWithAI);
   document.querySelectorAll('.crowd-btn').forEach((button) => button.addEventListener('click', () => reportCrowd(Number(button.dataset.level))));
   els.crowdThreshold.addEventListener('change', refreshCrowd);
