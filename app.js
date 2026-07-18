@@ -37,7 +37,23 @@ const els = {
   voiceStatus: $('voice-status'), voiceVisualizer: $('voice-visualizer'),
   demoToggle: $('demo-toggle'), demoExit: $('demo-exit'), demoStatus: $('demo-status'),
   demoDirection: $('demo-direction'), demoSpeed: $('demo-speed'),
+  travelDirection: $('travel-direction'), nextStationDirection: $('next-station-direction'),
 };
+
+function updateTravelDirection(direction = state.travelDirection) {
+  state.travelDirection = Number(direction) || 0;
+  if (!state.travelDirection || state.stationIndex == null) {
+    els.travelDirection.textContent = 'Detecting movement…';
+    els.nextStationDirection.textContent = 'Next station will appear after movement is detected';
+    return;
+  }
+  const towardsThrippunithura = state.travelDirection > 0;
+  const nextIndex = state.stationIndex + (towardsThrippunithura ? 1 : -1);
+  els.travelDirection.textContent = towardsThrippunithura ? 'Towards Thrippunithura' : 'Towards Aluva';
+  els.nextStationDirection.textContent = stations[nextIndex]
+    ? `Next station · ${stations[nextIndex].station}`
+    : `Arriving at ${towardsThrippunithura ? 'Thrippunithura Terminal' : 'Aluva'}`;
+}
 
 function playMetroDoorSound() {
   const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -160,6 +176,7 @@ function updateStationCard(station, distanceKm) {
   els.crowdStation.textContent = station.station;
   els.guideStation.textContent = station.station;
   renderLine();
+  updateTravelDirection();
   announce(station, true);
   refreshCrowd();
 }
@@ -167,9 +184,12 @@ function updateStationCard(station, distanceKm) {
 function announcement(station) {
   const hospital = station.hospital.replace(/\s*-\s*~.*$/, '').split('/')[0].trim();
   const police = station.police.replace(/\s*-\s*~.*$/, '').split('/')[0].trim();
-  const en = `Next stop, ${station.station}. For medical help, ${hospital} is about ${station.hospital_walk_min} minutes away. For police assistance, ${police} is nearby.`;
-  if (state.language === 'ml') return `അടുത്ത സ്റ്റേഷൻ, ${station.station}. ചികിത്സാ സഹായത്തിന് ${hospital}, ഏകദേശം ${station.hospital_walk_min} മിനിറ്റ് ദൂരം. പോലീസ് സഹായത്തിന് ${police} സമീപത്തുണ്ട്.`;
-  if (state.language === 'hi') return `अगला स्टेशन, ${station.station}। चिकित्सा सहायता के लिए ${hospital}, लगभग ${station.hospital_walk_min} मिनट दूर है। पुलिस सहायता के लिए ${police} पास में है।`;
+  const direction = state.travelDirection > 0 ? ' towards Thrippunithura' : state.travelDirection < 0 ? ' towards Aluva' : '';
+  const directionMl = state.travelDirection > 0 ? ', തൃപ്പൂണിത്തുറ ഭാഗത്തേക്ക്' : state.travelDirection < 0 ? ', ആലുവ ഭാഗത്തേക്ക്' : '';
+  const directionHi = state.travelDirection > 0 ? ', त्रिपुनिथुरा की ओर' : state.travelDirection < 0 ? ', अलुवा की ओर' : '';
+  const en = `Next stop, ${station.station}${direction}. For medical help, ${hospital} is about ${station.hospital_walk_min} minutes away. For police assistance, ${police} is nearby.`;
+  if (state.language === 'ml') return `അടുത്ത സ്റ്റേഷൻ, ${station.station}${directionMl}. ചികിത്സാ സഹായത്തിന് ${hospital}, ഏകദേശം ${station.hospital_walk_min} മിനിറ്റ് ദൂരം. പോലീസ് സഹായത്തിന് ${police} സമീപത്തുണ്ട്.`;
+  if (state.language === 'hi') return `अगला स्टेशन, ${station.station}${directionHi}। चिकित्सा सहायता के लिए ${hospital}, लगभग ${station.hospital_walk_min} मिनट दूर है। पुलिस सहायता के लिए ${police} पास में है।`;
   return en;
 }
 
@@ -327,6 +347,7 @@ function handlePosition(position) {
     if (state.gpsCandidateIndex === rawIndex) state.gpsCandidateCount = (state.gpsCandidateCount || 0) + 1;
     else { state.gpsCandidateIndex = rawIndex; state.gpsCandidateCount = 1; }
     if (state.gpsCandidateCount >= 2) {
+      state.travelDirection = Math.sign(rawIndex - state.stationIndex) || state.travelDirection;
       state.stationIndex = rawIndex;
       state.gpsCandidateIndex = null;
       state.gpsCandidateCount = 0;
@@ -454,13 +475,27 @@ function crowdStatus(reports) {
 function paintCrowd(reports) {
   const status = crowdStatus(reports);
   const average = reports.length ? reports.reduce((sum, row) => sum + Number(row.level), 0) / reports.length : 0;
+  const levelCounts = reports.reduce((counts, row) => {
+    const level = Number(row.level);
+    if (level >= 1 && level <= 3) counts[level] += 1;
+    return counts;
+  }, { 1: 0, 2: 0, 3: 0 });
+  const volumeAlert = [3, 2, 1].map((level) => ({ level, count: levelCounts[level] })).find((item) => item.count > 15);
+  const levelLabel = { 1: 'Low', 2: 'Medium', 3: 'High' };
   els.crowdBadge.textContent = `${status.label} · ${reports.length} report${reports.length === 1 ? '' : 's'}`;
   els.crowdBadge.className = `crowd-badge ${status.tone}`;
   const threshold = Number(els.crowdThreshold.value);
-  const shouldAlert = reports.length > 0 && average >= threshold;
+  const thresholdAlert = reports.length > 0 && average >= threshold;
+  const shouldAlert = thresholdAlert || Boolean(volumeAlert);
   els.crowdAlert.hidden = !shouldAlert;
-  if (shouldAlert) els.crowdAlert.textContent = `⚠ ${state.trainId} is crowded near ${state.nearest?.station || 'your station'} — ${status.label.toLowerCase()}.`;
-  const alertKey = `${state.nearest?.station}:${status.tone}:${threshold}`;
+  if (volumeAlert) {
+    els.crowdAlert.textContent = `⚠ Crowd report surge: ${volumeAlert.count} ${levelLabel[volumeAlert.level]} reports near ${state.nearest?.station || 'your station'} in the last 15 minutes.`;
+  } else if (thresholdAlert) {
+    els.crowdAlert.textContent = `⚠ ${state.trainId} is crowded near ${state.nearest?.station || 'your station'} — ${status.label.toLowerCase()}.`;
+  }
+  const alertKey = volumeAlert
+    ? `${state.nearest?.station}:volume:${volumeAlert.level}:${volumeAlert.count}`
+    : `${state.nearest?.station}:${status.tone}:${threshold}`;
   if (shouldAlert && state.lastCrowdAlert !== alertKey) {
     state.lastCrowdAlert = alertKey;
     navigator.vibrate?.([180, 80, 180]);
@@ -804,6 +839,7 @@ async function startDemoRide() {
     els.trainId.textContent = `Demo · ${state.trainId}`;
     const selected = els.manualStation.value === '' ? 0 : Number(els.manualStation.value);
     state.demoProgress = selected;
+    state.travelDirection = Number(els.demoDirection.value);
     state.stationIndex = selected;
     state.lineProgress = selected;
     state.nearest = stations[selected];
@@ -825,11 +861,14 @@ async function startDemoRide() {
   state.demoJourneyTimer = setInterval(() => {
     if (!state.demoRunning) return;
     const direction = Number(els.demoDirection.value);
+    state.travelDirection = direction;
     const speed = Number(els.demoSpeed.value);
     state.demoProgress += direction * 0.018 * speed;
     if (state.demoProgress >= stations.length - 1 || state.demoProgress <= 0) {
       state.demoProgress = Math.max(0, Math.min(stations.length - 1, state.demoProgress));
       els.demoDirection.value = String(direction * -1);
+      state.travelDirection = direction * -1;
+      updateTravelDirection();
     }
     state.lineProgress = state.demoProgress;
     const nextIndex = Math.round(state.demoProgress);
@@ -994,6 +1033,7 @@ function bindEvents() {
   els.aiCompose.addEventListener('click', composeWithAI);
   els.demoToggle.addEventListener('click', startDemoRide);
   els.demoExit.addEventListener('click', exitDemoRide);
+  els.demoDirection.addEventListener('change', () => updateTravelDirection(Number(els.demoDirection.value)));
   document.querySelectorAll('.crowd-btn').forEach((button) => button.addEventListener('click', () => reportCrowd(Number(button.dataset.level))));
   els.crowdThreshold.addEventListener('change', refreshCrowd);
   els.manualStation.addEventListener('change', () => {
