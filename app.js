@@ -29,6 +29,7 @@ const els = {
   rhythmDistance: $('rhythm-distance'), crowdStation: $('crowd-station'), guideStation: $('guide-station'),
   aiCompose: $('ai-compose'),
   locationToggle: $('location-toggle'), crowdThreshold: $('crowd-threshold'), crowdAlert: $('crowd-alert'),
+  motionSensitivity: $('motion-sensitivity'), testBeat: $('test-beat'),
 };
 
 async function loadStations() {
@@ -124,15 +125,38 @@ function handlePosition(position) {
   if (accuracy > 250 && state.currentPosition) return;
   state.currentPosition = { latitude, longitude };
   const rawNearest = findNearestStation(latitude, longitude, stations);
-  const projection = projectOntoMetroLine(latitude, longitude);
-  const smoothing = accuracy < 35 ? 0.38 : 0.2;
-  state.lineProgress = state.lineProgress == null ? projection.progress : state.lineProgress + (projection.progress - state.lineProgress) * smoothing;
   if (state.stationIndex == null) {
-    const nearestIndex = stations.indexOf(rawNearest.station);
-    state.stationIndex = projection.distance > 1.5 && nearestIndex >= 0 ? nearestIndex : Math.round(state.lineProgress);
+    state.stationIndex = stations.indexOf(rawNearest.station);
   }
-  while (state.stationIndex < stations.length - 1 && state.lineProgress >= state.stationIndex + 0.55) state.stationIndex += 1;
-  while (state.stationIndex > 0 && state.lineProgress <= state.stationIndex - 0.55) state.stationIndex -= 1;
+  let current = stations[state.stationIndex];
+  let currentDistance = haversineKm(latitude, longitude, current.lat, current.lng);
+  // If tracking resumes in a completely different area, safely reacquire once.
+  if (currentDistance > 2 && rawNearest.distanceKm + 0.4 < currentDistance) {
+    state.stationIndex = stations.indexOf(rawNearest.station);
+    current = stations[state.stationIndex];
+    currentDistance = rawNearest.distanceKm;
+  } else {
+    const adjacent = [state.stationIndex - 1, state.stationIndex + 1]
+      .filter((index) => index >= 0 && index < stations.length)
+      .map((index) => ({ index, distance: haversineKm(latitude, longitude, stations[index].lat, stations[index].lng) }))
+      .sort((a, b) => a.distance - b.distance)[0];
+    // Cross the geographic midpoint, plus 35 m of hysteresis, before changing.
+    if (adjacent && adjacent.distance + 0.035 < currentDistance) {
+      state.stationIndex = adjacent.index;
+      current = stations[state.stationIndex];
+      currentDistance = adjacent.distance;
+    }
+  }
+  const neighborCandidates = [state.stationIndex - 1, state.stationIndex + 1]
+    .filter((index) => index >= 0 && index < stations.length)
+    .map((index) => ({ index, distance: haversineKm(latitude, longitude, stations[index].lat, stations[index].lng) }))
+    .sort((a, b) => a.distance - b.distance);
+  const next = neighborCandidates[0];
+  if (next) {
+    const ratio = currentDistance / Math.max(0.001, currentDistance + next.distance);
+    const rawProgress = state.stationIndex + Math.sign(next.index - state.stationIndex) * Math.min(0.49, ratio);
+    state.lineProgress = state.lineProgress == null ? rawProgress : state.lineProgress * 0.72 + rawProgress * 0.28;
+  } else state.lineProgress = state.stationIndex;
   const trackedStation = stations[state.stationIndex];
   const result = { station: trackedStation, distanceKm: haversineKm(latitude, longitude, trackedStation.lat, trackedStation.lng) };
   els.locationStatus.textContent = `Live · ±${Math.round(accuracy)} m`;

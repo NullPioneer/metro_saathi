@@ -25,10 +25,14 @@
           <div><strong id="beat-count">0</strong><span>train beats</span></div>
           <div><strong id="beat-tempo">—</strong><span>BPM</span></div>
         </div>
+        <div class="sensor-controls">
+          <label for="motion-sensitivity">Beat sensitivity <input id="motion-sensitivity" type="range" min="1" max="10" value="8"></label>
+          <button id="test-beat" class="ghost-btn" type="button">Test beat</button>
+        </div>
         <p class="helper rhythm-copy">Place your phone securely. Every rail jolt and acceleration spike shapes the percussion while a soft drone follows the ride.</p>
         <button id="music-toggle" class="primary-btn music-cta" type="button">▶ Start listening to the train</button>
         <button id="ai-compose" class="ghost-btn" type="button">✦ Compose from this ride with AI</button>
-        <p id="motion-help" class="microcopy" aria-live="polite">Tap once to allow sound and motion access. Audio still works if your device has no motion sensor.</p>
+        <p id="motion-help" class="microcopy" aria-live="polite">Tap once to allow sound and motion access. Increase sensitivity if train vibrations are gentle.</p>
       </section>
       <section class="panel now-card"><span class="live-dot"></span><div><p class="eyebrow">Your train now</p><h2 id="rhythm-station">Locating nearest station…</h2><p id="rhythm-distance" class="helper"></p></div></section>
     </section>
