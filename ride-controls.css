@@ -1,6 +1,7 @@
 .location-controls { display: flex; align-items: center; gap: 6px; }
 .location-toggle { border: 0; color: var(--text); cursor: pointer; }
-.train-marker { position: absolute; z-index: 4; left: 50%; top: -31px; transform: translateX(-50%); font-size: 1.5rem; filter: drop-shadow(0 4px 8px rgba(0,0,0,.55)); animation: train-rock .7s ease-in-out infinite alternate; }
+.line-scroll { padding-top: 48px; }
+.train-marker { position: absolute; z-index: 4; top: -37px; transform: translateX(-50%); font-size: 1.5rem; filter: drop-shadow(0 4px 8px rgba(0,0,0,.55)); animation: train-rock .7s ease-in-out infinite alternate; transition: left .9s ease-out; }
 .threshold-control { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 14px; color: var(--muted); font-size: .82rem; }
 .crowd-alert { padding: 14px; border: 1px solid rgba(255,105,133,.55); border-radius: 14px; background: rgba(120,44,67,.4); color: #ffd7df; font-weight: 800; animation: alert-pulse 1.2s ease-in-out infinite; }
 .crowd-alert[hidden] { display: none; }

@@ -1,4 +1,4 @@
-import { findNearestStation, getLiveRoute, mapsDeepLink } from './routing.js';
+import { findNearestStation, getLiveRoute, mapsDeepLink, haversineKm } from './routing.js';
 import { supabase, isSupabaseConfigured } from './supabase-config.js';
 import { seedCrowdDemo } from './seed.js';
 
@@ -46,18 +46,37 @@ function renderLine() {
     if (station.station === state.nearest?.station) item.classList.add('active');
     item.setAttribute('aria-label', station.station);
     item.innerHTML = `<span class="station-dot" aria-hidden="true"></span><span class="station-label">${station.station}</span>`;
-    if (station.station === state.nearest?.station) {
-      const train = document.createElement('span');
-      train.className = 'train-marker';
-      train.textContent = '🚇';
-      train.setAttribute('aria-label', `Your train is near ${station.station}`);
-      item.append(train);
-    }
     els.metroLine.append(item);
     if (station.station === state.nearest?.station) {
       requestAnimationFrame(() => item.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }));
     }
   });
+  if (Number.isFinite(state.lineProgress)) {
+    const train = document.createElement('span');
+    train.className = 'train-marker';
+    train.style.left = `${64 + state.lineProgress * 72}px`;
+    train.textContent = '🚇';
+    train.setAttribute('aria-label', `Your train is near ${state.nearest?.station || 'the metro line'}`);
+    els.metroLine.append(train);
+  }
+}
+
+function projectOntoMetroLine(latitude, longitude) {
+  let best = { progress: 0, distance: Infinity };
+  const latScale = 111.32;
+  const lngScale = 111.32 * Math.cos(latitude * Math.PI / 180);
+  for (let index = 0; index < stations.length - 1; index += 1) {
+    const a = stations[index]; const b = stations[index + 1];
+    const bx = (b.lng - a.lng) * lngScale; const by = (b.lat - a.lat) * latScale;
+    const px = (longitude - a.lng) * lngScale; const py = (latitude - a.lat) * latScale;
+    const lengthSquared = bx * bx + by * by;
+    const t = Math.max(0, Math.min(1, lengthSquared ? (px * bx + py * by) / lengthSquared : 0));
+    const projectedLat = a.lat + (b.lat - a.lat) * t;
+    const projectedLng = a.lng + (b.lng - a.lng) * t;
+    const distance = haversineKm(latitude, longitude, projectedLat, projectedLng);
+    if (distance < best.distance) best = { progress: index + t, distance };
+  }
+  return best;
 }
 
 function updateStationCard(station, distanceKm) {
@@ -102,9 +121,20 @@ function announce(station, force = false) {
 
 function handlePosition(position) {
   const { latitude, longitude, accuracy } = position.coords;
+  if (accuracy > 250 && state.currentPosition) return;
   state.currentPosition = { latitude, longitude };
-  const result = findNearestStation(latitude, longitude, stations);
-  if (!result.station) return;
+  const rawNearest = findNearestStation(latitude, longitude, stations);
+  const projection = projectOntoMetroLine(latitude, longitude);
+  const smoothing = accuracy < 35 ? 0.38 : 0.2;
+  state.lineProgress = state.lineProgress == null ? projection.progress : state.lineProgress + (projection.progress - state.lineProgress) * smoothing;
+  if (state.stationIndex == null) {
+    const nearestIndex = stations.indexOf(rawNearest.station);
+    state.stationIndex = projection.distance > 1.5 && nearestIndex >= 0 ? nearestIndex : Math.round(state.lineProgress);
+  }
+  while (state.stationIndex < stations.length - 1 && state.lineProgress >= state.stationIndex + 0.55) state.stationIndex += 1;
+  while (state.stationIndex > 0 && state.lineProgress <= state.stationIndex - 0.55) state.stationIndex -= 1;
+  const trackedStation = stations[state.stationIndex];
+  const result = { station: trackedStation, distanceKm: haversineKm(latitude, longitude, trackedStation.lat, trackedStation.lng) };
   els.locationStatus.textContent = `Live · ±${Math.round(accuracy)} m`;
   els.locationStatus.className = 'status-pill live';
   const changed = result.station.station !== state.nearest?.station;
@@ -116,6 +146,7 @@ function handlePosition(position) {
     const distance = `${result.distanceKm.toFixed(2)} km from your live position`;
     els.stationDistance.textContent = distance;
     els.rhythmDistance.textContent = distance;
+    renderLine();
   }
 }
 
@@ -283,14 +314,37 @@ function motionPulse(event) {
   void els.rhythmOrb.offsetWidth;
   els.rhythmOrb.classList.add('hit');
   const now = state.audio.context.currentTime;
-  const osc = state.audio.context.createOscillator();
-  const gain = state.audio.context.createGain();
-  osc.frequency.setValueAtTime(180, now);
-  osc.frequency.exponentialRampToValueAtTime(70, now + 0.12);
-  gain.gain.setValueAtTime(0.08, now);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
-  osc.connect(gain).connect(state.audio.master);
-  osc.start(now); osc.stop(now + 0.15);
+  const strength = Math.min(1, 0.25 + magnitude / 5);
+
+  // Low wheel thump: acceleration controls pitch and impact.
+  const kick = state.audio.context.createOscillator();
+  const kickGain = state.audio.context.createGain();
+  kick.type = 'sine';
+  kick.frequency.setValueAtTime(125 + magnitude * 12, now);
+  kick.frequency.exponentialRampToValueAtTime(42, now + 0.22);
+  kickGain.gain.setValueAtTime(0.035 + strength * 0.11, now);
+  kickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+  kick.connect(kickGain).connect(state.audio.master);
+  kick.start(now); kick.stop(now + 0.25);
+
+  // Alternating metallic rail click makes irregular train motion musical.
+  const click = state.audio.context.createOscillator();
+  const clickGain = state.audio.context.createGain();
+  click.type = state.beatCount % 2 ? 'square' : 'triangle';
+  click.frequency.setValueAtTime(state.beatCount % 4 === 0 ? 920 : 620 + magnitude * 35, now);
+  click.frequency.exponentialRampToValueAtTime(240, now + 0.055);
+  clickGain.gain.setValueAtTime(0.018 + strength * 0.035, now);
+  clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+  click.connect(clickGain).connect(state.audio.master);
+  click.start(now); click.stop(now + 0.08);
+
+  // Each detected beat moves the ambient harmony through the AI recipe.
+  const recipe = state.composition || { rootHz: 73.42, intervals: [1, 1.5] };
+  const chord = recipe.intervals[state.beatCount % recipe.intervals.length] || 1;
+  state.audio.oscillators?.forEach((oscillator, index) => {
+    const octave = index === 2 ? 2 : 1;
+    oscillator.frequency.setTargetAtTime(recipe.rootHz * chord * octave, now, 0.35);
+  });
 }
 
 async function toggleMusic() {
