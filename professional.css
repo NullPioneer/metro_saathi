@@ -332,6 +332,20 @@ body:not(.splash-active) .station-stop.active .station-dot {
 }
 body:not(.splash-active) .station-stop.active .station-label { color: #f5c518; }
 body:not(.splash-active) .info-icon { color: #f5c518; background: rgba(245,197,24,.1); }
+body:not(.splash-active) .info-grid article > div { min-width: 0; display: flex; flex: 1; flex-direction: column; align-items: flex-start; }
+body:not(.splash-active) .mini-route-btn {
+  margin-top: auto;
+  padding: 9px 0 2px;
+  border: 0;
+  color: #f5c518;
+  background: transparent;
+  font-size: .75rem;
+  font-weight: 850;
+  letter-spacing: .015em;
+}
+body:not(.splash-active) .mini-route-btn:hover { color: #ffe064; text-decoration: underline; }
+body:not(.splash-active) .mini-route-btn:disabled { color: #777; cursor: wait; }
+body:not(.splash-active) .route-row { min-height: 48px; margin-top: 10px; padding: 10px 12px; border: 1px solid #2d2d2d; border-radius: 8px; background: #181818; }
 
 body:not(.splash-active) .voice-visualizer {
   border-color: #303030;

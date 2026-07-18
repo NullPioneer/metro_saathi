@@ -154,7 +154,7 @@ function updateStationCard(station, distanceKm) {
   els.hospitalTimes.textContent = `Walk ${station.hospital_walk_min} min · Auto ${station.hospital_auto_min} min`;
   els.policeName.textContent = station.police;
   els.policeTimes.textContent = `Walk ${station.police_walk_min} min · Auto ${station.police_auto_min} min`;
-  els.routeOutput.textContent = 'Tap to find the hospital route.';
+  els.routeOutput.textContent = 'Choose attraction, hospital, or police directions.';
   els.rhythmStation.textContent = station.station;
   els.rhythmDistance.textContent = Number.isFinite(distanceKm) ? `${distanceKm.toFixed(2)} km from your live position` : 'Manual station confirmation';
   els.crowdStation.textContent = station.station;
