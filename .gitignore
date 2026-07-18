@@ -1,0 +1,8 @@
+# Secrets and local environment overrides
+.env
+.env.*
+!.env.example
+
+# Local Supabase files
+.supabase/
+supabase/.temp/

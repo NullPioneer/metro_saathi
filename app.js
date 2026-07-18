@@ -23,7 +23,11 @@ const els = {
   hospitalTimes: $('hospital-times'), policeName: $('police-name'), policeTimes: $('police-times'),
   routeBtn: $('route-btn'), routeOutput: $('route-output'), crowdBadge: $('crowd-badge'),
   crowdMessage: $('crowd-message'), langSelect: $('lang-select'), muteToggle: $('mute-toggle'),
-  musicToggle: $('music-toggle'), locateBtn: $('locate-btn'),
+  musicToggle: $('music-toggle'), locateBtn: $('locate-btn'), motionStatus: $('motion-status'),
+  motionIntensity: $('motion-intensity'), beatCount: $('beat-count'), beatTempo: $('beat-tempo'),
+  rhythmOrb: $('rhythm-orb'), motionHelp: $('motion-help'), rhythmStation: $('rhythm-station'),
+  rhythmDistance: $('rhythm-distance'), crowdStation: $('crowd-station'), guideStation: $('guide-station'),
+  aiCompose: $('ai-compose'),
 };
 
 async function loadStations() {
@@ -57,6 +61,10 @@ function updateStationCard(station, distanceKm) {
   els.policeName.textContent = station.police;
   els.policeTimes.textContent = `Walk ${station.police_walk_min} min · Auto ${station.police_auto_min} min`;
   els.routeOutput.textContent = 'Tap to find the hospital route.';
+  els.rhythmStation.textContent = station.station;
+  els.rhythmDistance.textContent = `${distanceKm.toFixed(2)} km from your live position`;
+  els.crowdStation.textContent = station.station;
+  els.guideStation.textContent = station.station;
   renderLine();
   announce(station);
   refreshCrowd();
@@ -93,7 +101,13 @@ function handlePosition(position) {
   const changed = result.station.station !== state.nearest?.station;
   state.nearest = result.station;
   state.nearestDistance = result.distanceKm;
-  if (changed) updateStationCard(result.station, result.distanceKm);
+  if (changed) {
+    updateStationCard(result.station, result.distanceKm);
+  } else {
+    const distance = `${result.distanceKm.toFixed(2)} km from your live position`;
+    els.stationDistance.textContent = distance;
+    els.rhythmDistance.textContent = distance;
+  }
 }
 
 function startLocation() {
@@ -205,11 +219,30 @@ function subscribeCrowd() {
 }
 
 function motionPulse(event) {
-  const a = event.acceleration;
+  const a = event.acceleration || event.accelerationIncludingGravity;
   if (!a || !state.audio) return;
-  const magnitude = Math.hypot(a.x || 0, a.y || 0, a.z || 0);
-  if (magnitude < 3 || performance.now() - (state.lastPulse || 0) < 180) return;
+  const raw = Math.hypot(a.x || 0, a.y || 0, a.z || 0);
+  state.motionBaseline = state.motionBaseline == null ? raw : state.motionBaseline * 0.92 + raw * 0.08;
+  const magnitude = Math.abs(raw - state.motionBaseline);
+  const visualIntensity = Math.min(10, magnitude * 2.2);
+  state.motionSamples = [...(state.motionSamples || []), visualIntensity].slice(-240);
+  els.motionIntensity.textContent = visualIntensity.toFixed(1);
+  els.rhythmOrb.style.setProperty('--motion', `${1 + visualIntensity / 28}`);
+  state.audio.master.gain.setTargetAtTime(0.025 + Math.min(magnitude, 5) * 0.006, state.audio.context.currentTime, 0.08);
+  if (magnitude < 0.85 || performance.now() - (state.lastPulse || 0) < 180) return;
+  const previousPulse = state.lastPulse;
   state.lastPulse = performance.now();
+  state.beatCount = (state.beatCount || 0) + 1;
+  els.beatCount.textContent = state.beatCount;
+  if (previousPulse) {
+    const interval = state.lastPulse - previousPulse;
+    state.beatIntervals = [...(state.beatIntervals || []), interval].slice(-8);
+    const average = state.beatIntervals.reduce((sum, value) => sum + value, 0) / state.beatIntervals.length;
+    els.beatTempo.textContent = Math.min(240, Math.round(60000 / average));
+  }
+  els.rhythmOrb.classList.remove('hit');
+  void els.rhythmOrb.offsetWidth;
+  els.rhythmOrb.classList.add('hit');
   const now = state.audio.context.currentTime;
   const osc = state.audio.context.createOscillator();
   const gain = state.audio.context.createGain();
@@ -226,25 +259,96 @@ async function toggleMusic() {
     window.removeEventListener('devicemotion', state.motionHandler);
     await state.audio.context.close();
     state.audio = null;
-    els.musicToggle.textContent = '▶ Play metro rhythm';
+    els.musicToggle.textContent = '▶ Start listening to the train';
+    els.motionStatus.textContent = 'Sensor off';
+    els.motionStatus.className = 'status-pill';
+    els.motionHelp.textContent = 'Rhythm stopped. Tap to listen again.';
+    els.motionIntensity.textContent = '0.0';
     return;
   }
   if (typeof window.DeviceMotionEvent?.requestPermission === 'function') {
-    if (await window.DeviceMotionEvent.requestPermission() !== 'granted') return;
+    if (await window.DeviceMotionEvent.requestPermission() !== 'granted') {
+      els.motionHelp.textContent = 'Motion access was denied. Allow it in browser settings and retry.';
+      return;
+    }
   }
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   if (!AudioContext) return;
   const context = new AudioContext();
   const master = context.createGain(); master.gain.value = 0.035; master.connect(context.destination);
-  [73.42, 110].forEach((frequency, index) => {
+  const composition = state.composition || { rootHz: 73.42, intervals: [1, 1.5], waveforms: ['triangle', 'sine'], label: 'Metro ambient' };
+  const oscillators = [];
+  composition.intervals.slice(0, 3).forEach((interval, index) => {
     const osc = context.createOscillator(); const gain = context.createGain();
-    osc.type = index ? 'sine' : 'triangle'; osc.frequency.value = frequency; gain.gain.value = index ? 0.35 : 0.55;
+    osc.type = composition.waveforms[index] || (index ? 'sine' : 'triangle');
+    osc.frequency.value = composition.rootHz * interval;
+    gain.gain.value = index ? 0.25 : 0.5;
     osc.connect(gain).connect(master); osc.start();
+    oscillators.push(osc);
   });
-  state.audio = { context, master };
+  state.audio = { context, master, oscillators };
   state.motionHandler = motionPulse;
   window.addEventListener('devicemotion', state.motionHandler);
-  els.musicToggle.textContent = '■ Stop metro rhythm';
+  els.musicToggle.textContent = '■ Stop listening';
+  els.motionStatus.textContent = 'Listening live';
+  els.motionStatus.className = 'status-pill live';
+  els.motionHelp.textContent = 'Move with the train — rail movement now drives the beat.';
+}
+
+async function composeWithAI() {
+  if (!state.beatIntervals?.length) {
+    els.motionHelp.textContent = 'Start listening and capture a few train beats first.';
+    return;
+  }
+  els.aiCompose.disabled = true;
+  els.aiCompose.textContent = 'Composing from your ride…';
+  const samples = state.motionSamples || [];
+  const payload = {
+    station: state.nearest?.station || 'Kochi Metro',
+    beatIntervals: state.beatIntervals.map(Math.round),
+    averageMotion: samples.length ? samples.reduce((sum, value) => sum + value, 0) / samples.length : 0,
+    peakMotion: samples.length ? Math.max(...samples) : 0,
+  };
+  try {
+    let data;
+    try {
+      const response = await fetch('/api/compose-rhythm', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error('Local composer unavailable');
+      data = await response.json();
+    } catch {
+      const result = await supabase.functions.invoke('compose-rhythm', { body: payload });
+      if (result.error) throw result.error;
+      data = result.data;
+    }
+    state.composition = data;
+    state.audio?.oscillators?.forEach((oscillator, index) => {
+      oscillator.type = data.waveforms[index] || 'sine';
+      oscillator.frequency.setTargetAtTime(data.rootHz * (data.intervals[index] || 1), state.audio.context.currentTime, 0.7);
+    });
+    els.motionHelp.textContent = `AI composition ready: ${data.label}. It still follows your live train beats.`;
+  } catch (error) {
+    console.warn('AI composition failed', error);
+    els.motionHelp.textContent = 'AI composer is not deployed yet. Follow the README setup, then retry.';
+  } finally {
+    els.aiCompose.disabled = false;
+    els.aiCompose.textContent = '✦ Recompose from this ride';
+  }
+}
+
+function switchView(target) {
+  document.querySelectorAll('.app-view').forEach((view) => {
+    const active = view.dataset.view === target;
+    view.hidden = !active;
+    view.classList.toggle('active', active);
+  });
+  document.querySelectorAll('.nav-btn').forEach((button) => {
+    const active = button.dataset.target === target;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-current', active ? 'page' : 'false');
+  });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function bindEvents() {
@@ -258,7 +362,9 @@ function bindEvents() {
     els.muteToggle.setAttribute('aria-pressed', String(state.voiceMuted));
   });
   els.musicToggle.addEventListener('click', toggleMusic);
+  els.aiCompose.addEventListener('click', composeWithAI);
   document.querySelectorAll('.crowd-btn').forEach((button) => button.addEventListener('click', () => reportCrowd(Number(button.dataset.level))));
+  document.querySelectorAll('.nav-btn').forEach((button) => button.addEventListener('click', () => switchView(button.dataset.target)));
 }
 
 async function init() {

@@ -2,19 +2,21 @@
 
 Mobile-first Kochi Metro companion built with plain HTML, CSS, and JavaScript modules.
 
+The app has four separate mobile interfaces: motion-driven **Rhythm**, GPS-powered **Journey**, Supabase-backed **Crowd**, and multilingual **Guide**. Rhythm is the default screen; Journey marks all 25 stations and automatically centers the live nearest-station marker as GPS updates arrive.
+
 ## Run locally
 
 Geolocation and device motion require a secure context. Use a local static server rather than double-clicking `index.html`:
 
 ```powershell
-python -m http.server 8000
+node server.js
 ```
 
 Then open `http://localhost:8000` and allow location access.
 
 ## Enable shared crowd reports
 
-1. Create a Supabase project and put its project URL and anon key in `supabase-config.js`.
+1. The provided Supabase project URL and public anon key are configured in `supabase-config.js`.
 2. Create the table and enable realtime:
 
 ```sql
@@ -35,3 +37,31 @@ create policy "demo insert" on public.crowd_reports for insert with check (true)
 Without credentials the app remains demoable: sample crowd data and user reports are kept locally. Set `DEMO_MODE` in `seed.js` to `false` to disable sample reports.
 
 Hospital coordinates are not present in the supplied station JSON, so the route button opens a walking route to a Google Maps place search. If `hospital_lat` and `hospital_lng` are later added, the app automatically uses the provided live routing helper first.
+
+## Enable AI composition
+
+OpenAI acts as a composer: it turns captured motion/beat statistics into a musical recipe, while Web Audio renders that recipe and continues following the live train. The API key is never exposed to the browser.
+
+Install the Supabase CLI, sign in, and run:
+
+```powershell
+supabase link --project-ref yhhmwekqscbusddaoixu
+supabase secrets set OPENAI_API_KEY=your_key_here
+supabase functions deploy compose-rhythm
+```
+
+For local development, add the key to the ignored root `.env` file:
+
+```dotenv
+OPENAI_API_KEY=your_key_here
+```
+
+Then start the included secure local server:
+
+```powershell
+node server.js
+```
+
+This server provides `/api/compose-rhythm` and never sends the key to the browser. The Supabase Edge Function is the production deployment option.
+
+Never put the OpenAI key in `app.js`, `index.html`, Git, or Supabase's public anon-key configuration. The function source is in `supabase/functions/compose-rhythm/index.ts`.
