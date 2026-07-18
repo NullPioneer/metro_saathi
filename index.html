@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#07111f">
+  <title>Metro Saathi — Kochi Metro companion</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="hero">
+      <div><p class="eyebrow">Kochi Metro companion</p><h1>Metro Saathi</h1></div>
+      <button id="locate-btn" class="ghost-btn" type="button">⌖ Locate me</button>
+    </header>
+
+    <section class="panel line-panel" aria-labelledby="line-title">
+      <div class="panel-heading"><h2 id="line-title">Live position</h2><span id="location-status" class="status-pill">Waiting for GPS…</span></div>
+      <div class="line-scroll"><ol id="metro-line" class="metro-line" aria-label="Kochi Metro stations from Aluva to Thrippunithura"></ol></div>
+      <p class="scroll-hint">Swipe to explore all 25 stations</p>
+    </section>
+
+    <section class="panel station-card" aria-live="polite">
+      <div class="station-heading"><div><p class="eyebrow">Nearest station</p><h2 id="station-name">Finding you…</h2></div><span id="station-distance" class="distance"></span></div>
+      <div class="info-grid">
+        <article><span class="info-icon">✦</span><div><h3>Nearby attraction</h3><p id="station-attraction">Waiting for location…</p></div></article>
+        <article><span class="info-icon hospital">+</span><div><h3>Nearest hospital</h3><p id="hospital-name">—</p><p id="hospital-times" class="meta">—</p></div></article>
+        <article><span class="info-icon police">◆</span><div><h3>Nearest police</h3><p id="police-name">—</p><p id="police-times" class="meta">—</p></div></article>
+      </div>
+      <div class="route-row"><button id="route-btn" class="primary-btn" type="button">Get live route</button><div id="route-output" class="route-output" aria-live="polite">Route will appear here.</div></div>
+    </section>
+
+    <div class="panel-grid">
+      <section class="panel voice-panel">
+        <div><p class="eyebrow">Audio guide</p><h2>Voice guidance</h2></div>
+        <p class="helper">Station changes are announced automatically.</p>
+        <div class="controls"><label for="lang-select">Language <select id="lang-select"><option value="en">English</option><option value="ml">മലയാളം</option><option value="hi">हिन्दी</option></select></label><button id="mute-toggle" class="ghost-btn" type="button" aria-pressed="false">🔊 Mute voice</button></div>
+      </section>
+
+      <section class="panel crowd-panel">
+        <div class="panel-heading"><div><p class="eyebrow">Last 15 minutes</p><h2>Live crowd</h2></div><div id="crowd-badge" class="crowd-badge neutral">Waiting for station</div></div>
+        <p class="helper">How crowded is it around you?</p>
+        <div class="crowd-buttons"><button class="crowd-btn low" data-level="1" type="button">● Low</button><button class="crowd-btn medium" data-level="2" type="button">● Medium</button><button class="crowd-btn high" data-level="3" type="button">● High</button></div>
+        <p id="crowd-message" class="microcopy" aria-live="polite"></p>
+      </section>
+
+      <section class="panel music-panel">
+        <div><p class="eyebrow">Optional ambience</p><h2>Metro rhythm</h2></div>
+        <p class="helper">A soft ambient drone with beats triggered by train movement.</p>
+        <button id="music-toggle" class="ghost-btn" type="button">▶ Play metro rhythm</button>
+      </section>
+    </div>
+    <footer>Built for Kochi’s everyday journeys.</footer>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
