@@ -28,6 +28,7 @@ const els = {
   rhythmOrb: $('rhythm-orb'), motionHelp: $('motion-help'), rhythmStation: $('rhythm-station'),
   rhythmDistance: $('rhythm-distance'), crowdStation: $('crowd-station'), guideStation: $('guide-station'),
   aiCompose: $('ai-compose'),
+  locationToggle: $('location-toggle'), crowdThreshold: $('crowd-threshold'), crowdAlert: $('crowd-alert'),
 };
 
 async function loadStations() {
@@ -45,6 +46,13 @@ function renderLine() {
     if (station.station === state.nearest?.station) item.classList.add('active');
     item.setAttribute('aria-label', station.station);
     item.innerHTML = `<span class="station-dot" aria-hidden="true"></span><span class="station-label">${station.station}</span>`;
+    if (station.station === state.nearest?.station) {
+      const train = document.createElement('span');
+      train.className = 'train-marker';
+      train.textContent = '🚇';
+      train.setAttribute('aria-label', `Your train is near ${station.station}`);
+      item.append(train);
+    }
     els.metroLine.append(item);
     if (station.station === state.nearest?.station) {
       requestAnimationFrame(() => item.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }));
@@ -83,6 +91,7 @@ function announce(station, force = false) {
   const language = { en: 'en-IN', ml: 'ml-IN', hi: 'hi-IN' }[state.language];
   const voices = speechSynthesis.getVoices();
   const voice = voices.find((item) => item.lang.toLowerCase() === language.toLowerCase())
+    || voices.find((item) => item.lang.toLowerCase().startsWith(state.language))
     || voices.find((item) => item.lang.toLowerCase() === 'en-in');
   const utterance = new SpeechSynthesisUtterance(announcement(station));
   utterance.lang = voice?.lang || language;
@@ -111,15 +120,32 @@ function handlePosition(position) {
 }
 
 function startLocation() {
+  if (state.watchId != null) return;
   if (!navigator.geolocation) {
     els.locationStatus.textContent = 'GPS unavailable';
     return;
   }
   els.locationStatus.textContent = 'Finding you…';
-  navigator.geolocation.watchPosition(handlePosition, (error) => {
+  state.watchId = navigator.geolocation.watchPosition(handlePosition, (error) => {
     els.locationStatus.textContent = error.code === 1 ? 'Location permission needed' : 'GPS unavailable';
     els.locationStatus.className = 'status-pill error';
   }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
+  els.locationToggle.textContent = '■ Stop location';
+  els.locateBtn.textContent = '■ Stop location';
+}
+
+function stopLocation() {
+  if (state.watchId != null) navigator.geolocation.clearWatch(state.watchId);
+  state.watchId = null;
+  els.locationStatus.textContent = 'GPS off';
+  els.locationStatus.className = 'status-pill';
+  els.locationToggle.textContent = '⌖ Start location';
+  els.locateBtn.textContent = '⌖ Start location';
+  window.speechSynthesis?.cancel();
+}
+
+function toggleLocation() {
+  if (state.watchId == null) startLocation(); else stopLocation();
 }
 
 function hospitalSearch(station) {
@@ -172,8 +198,18 @@ function crowdStatus(reports) {
 
 function paintCrowd(reports) {
   const status = crowdStatus(reports);
+  const average = reports.length ? reports.reduce((sum, row) => sum + Number(row.level), 0) / reports.length : 0;
   els.crowdBadge.textContent = `${status.label} · ${reports.length} report${reports.length === 1 ? '' : 's'}`;
   els.crowdBadge.className = `crowd-badge ${status.tone}`;
+  const threshold = Number(els.crowdThreshold.value);
+  const shouldAlert = reports.length > 0 && average >= threshold;
+  els.crowdAlert.hidden = !shouldAlert;
+  const alertKey = `${state.nearest?.station}:${status.tone}:${threshold}`;
+  if (shouldAlert && state.lastCrowdAlert !== alertKey) {
+    state.lastCrowdAlert = alertKey;
+    navigator.vibrate?.([180, 80, 180]);
+  }
+  if (!shouldAlert) state.lastCrowdAlert = null;
 }
 
 async function refreshCrowd() {
@@ -221,6 +257,9 @@ function subscribeCrowd() {
 function motionPulse(event) {
   const a = event.acceleration || event.accelerationIncludingGravity;
   if (!a || !state.audio) return;
+  state.lastMotionEvent = performance.now();
+  els.motionStatus.textContent = 'Listening live';
+  els.motionStatus.className = 'status-pill live';
   const raw = Math.hypot(a.x || 0, a.y || 0, a.z || 0);
   state.motionBaseline = state.motionBaseline == null ? raw : state.motionBaseline * 0.92 + raw * 0.08;
   const magnitude = Math.abs(raw - state.motionBaseline);
@@ -275,6 +314,7 @@ async function toggleMusic() {
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   if (!AudioContext) return;
   const context = new AudioContext();
+  state.lastMotionEvent = null;
   const master = context.createGain(); master.gain.value = 0.035; master.connect(context.destination);
   const composition = state.composition || { rootHz: 73.42, intervals: [1, 1.5], waveforms: ['triangle', 'sine'], label: 'Metro ambient' };
   const oscillators = [];
@@ -293,6 +333,15 @@ async function toggleMusic() {
   els.motionStatus.textContent = 'Listening live';
   els.motionStatus.className = 'status-pill live';
   els.motionHelp.textContent = 'Move with the train — rail movement now drives the beat.';
+  setTimeout(() => {
+    if (state.audio && !state.lastMotionEvent) {
+      els.motionStatus.textContent = 'Audio on · no sensor data';
+      els.motionStatus.className = 'status-pill error';
+      els.motionHelp.textContent = location.protocol !== 'https:' && location.hostname !== 'localhost'
+        ? 'Motion sensing needs HTTPS. The ambient audio is still playing.'
+        : 'No motion events received. Check browser motion permissions; ambient audio is still playing.';
+    }
+  }, 3500);
 }
 
 async function composeWithAI() {
@@ -352,7 +401,8 @@ function switchView(target) {
 }
 
 function bindEvents() {
-  els.locateBtn.addEventListener('click', startLocation);
+  els.locateBtn.addEventListener('click', toggleLocation);
+  els.locationToggle.addEventListener('click', toggleLocation);
   els.routeBtn.addEventListener('click', handleRoute);
   els.langSelect.addEventListener('change', () => { state.language = els.langSelect.value; if (state.nearest) announce(state.nearest, true); });
   els.muteToggle.addEventListener('click', () => {
@@ -364,6 +414,7 @@ function bindEvents() {
   els.musicToggle.addEventListener('click', toggleMusic);
   els.aiCompose.addEventListener('click', composeWithAI);
   document.querySelectorAll('.crowd-btn').forEach((button) => button.addEventListener('click', () => reportCrowd(Number(button.dataset.level))));
+  els.crowdThreshold.addEventListener('change', refreshCrowd);
   document.querySelectorAll('.nav-btn').forEach((button) => button.addEventListener('click', () => switchView(button.dataset.target)));
 }
 
@@ -384,6 +435,11 @@ async function init() {
   }
   state.crowdReports.push(...await seedCrowdDemo(isSupabaseConfigured));
   subscribeCrowd();
+  if ('speechSynthesis' in window) {
+    speechSynthesis.addEventListener('voiceschanged', () => {
+      if (state.nearest && !state.voiceMuted) announce(state.nearest, true);
+    });
+  }
   startLocation();
 }
 

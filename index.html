@@ -6,13 +6,14 @@
   <meta name="theme-color" content="#07111f">
   <title>Metro Saathi</title>
   <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./ride-controls.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <main class="app-shell">
     <header class="hero">
       <div><p class="eyebrow">Kochi Metro companion</p><h1>Metro Saathi</h1></div>
-      <span id="location-status" class="status-pill">Waiting for GPS…</span>
+      <div class="location-controls"><span id="location-status" class="status-pill">GPS off</span><button id="location-toggle" class="status-pill location-toggle" type="button">⌖ Start location</button></div>
     </header>
 
     <section class="app-view active" data-view="rhythm" aria-labelledby="rhythm-title">
@@ -27,14 +28,14 @@
         <p class="helper rhythm-copy">Place your phone securely. Every rail jolt and acceleration spike shapes the percussion while a soft drone follows the ride.</p>
         <button id="music-toggle" class="primary-btn music-cta" type="button">▶ Start listening to the train</button>
         <button id="ai-compose" class="ghost-btn" type="button">✦ Compose from this ride with AI</button>
-        <p id="motion-help" class="microcopy" aria-live="polite">Tap once to allow sound and motion access.</p>
+        <p id="motion-help" class="microcopy" aria-live="polite">Tap once to allow sound and motion access. Audio still works if your device has no motion sensor.</p>
       </section>
       <section class="panel now-card"><span class="live-dot"></span><div><p class="eyebrow">Your train now</p><h2 id="rhythm-station">Locating nearest station…</h2><p id="rhythm-distance" class="helper"></p></div></section>
     </section>
 
     <section class="app-view" data-view="journey" aria-labelledby="journey-title" hidden>
       <section class="panel line-panel">
-        <div class="panel-heading"><div><p class="eyebrow">All 25 stations</p><h2 id="journey-title">Where is my train?</h2></div><button id="locate-btn" class="ghost-btn" type="button">⌖ Locate me</button></div>
+        <div class="panel-heading"><div><p class="eyebrow">All 25 stations</p><h2 id="journey-title">Where is my train?</h2></div><button id="locate-btn" class="ghost-btn" type="button">⌖ Start location</button></div>
         <div class="line-scroll"><ol id="metro-line" class="metro-line" aria-label="Kochi Metro stations from Aluva to Thrippunithura"></ol></div>
         <p class="scroll-hint">Your nearest station pulses in yellow · swipe for the full line</p>
       </section>
@@ -53,6 +54,10 @@
       <section class="panel crowd-panel">
         <div class="panel-heading"><div><p class="eyebrow">Reports from last 15 minutes</p><h2 id="crowd-title">Live crowd</h2></div><div id="crowd-badge" class="crowd-badge neutral">Waiting for station</div></div>
         <div class="view-station"><span>Reporting at</span><strong id="crowd-station">Locating…</strong></div>
+        <label class="threshold-control" for="crowd-threshold">Alert me when crowd is
+          <select id="crowd-threshold"><option value="2.5">High</option><option value="1.5">Medium or higher</option></select>
+        </label>
+        <div id="crowd-alert" class="crowd-alert" role="alert" hidden>⚠ Crowd level is above your alert threshold.</div>
         <p class="helper">How crowded is your coach right now?</p>
         <div class="crowd-buttons"><button class="crowd-btn low" data-level="1" type="button">●<span>Low</span></button><button class="crowd-btn medium" data-level="2" type="button">●<span>Medium</span></button><button class="crowd-btn high" data-level="3" type="button">●<span>High</span></button></div>
         <p id="crowd-message" class="microcopy" aria-live="polite"></p>
