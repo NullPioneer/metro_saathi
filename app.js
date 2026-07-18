@@ -4,6 +4,7 @@ import { seedCrowdDemo } from './seed.js';
 
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
 const MAX_METRO_DISTANCE_KM = 5;
+const MAX_STATION_GPS_ACCURACY_M = 500;
 let stations = [];
 
 const state = {
@@ -19,6 +20,7 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 const els = {
+  welcomeScreen: $('welcome-screen'), welcomeVideo: $('welcome-video'), enterApp: $('enter-app'), appShell: $('app-shell'),
   locationStatus: $('location-status'), metroLine: $('metro-line'), stationName: $('station-name'),
   stationDistance: $('station-distance'), stationAttraction: $('station-attraction'), hospitalName: $('hospital-name'),
   hospitalTimes: $('hospital-times'), policeName: $('police-name'), policeTimes: $('police-times'),
@@ -33,10 +35,67 @@ const els = {
   motionSensitivity: $('motion-sensitivity'), testBeat: $('test-beat'),
   manualStation: $('manual-station'),
   trainId: $('train-id'),
-  voiceStatus: $('voice-status'),
+  voiceStatus: $('voice-status'), voiceVisualizer: $('voice-visualizer'),
   demoToggle: $('demo-toggle'), demoExit: $('demo-exit'), demoStatus: $('demo-status'),
   demoDirection: $('demo-direction'), demoSpeed: $('demo-speed'),
 };
+
+function playMetroDoorSound() {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) return Promise.resolve();
+  const context = new AudioContext();
+  const master = context.createGain();
+  master.gain.setValueAtTime(0.001, context.currentTime);
+  master.gain.exponentialRampToValueAtTime(0.22, context.currentTime + 0.035);
+  master.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 1.05);
+  master.connect(context.destination);
+
+  [0, 0.2].forEach((offset, index) => {
+    const tone = context.createOscillator();
+    const gain = context.createGain();
+    tone.type = 'sine';
+    tone.frequency.setValueAtTime(index ? 880 : 659.25, context.currentTime + offset);
+    gain.gain.setValueAtTime(0.001, context.currentTime + offset);
+    gain.gain.exponentialRampToValueAtTime(0.45, context.currentTime + offset + 0.025);
+    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + offset + 0.19);
+    tone.connect(gain).connect(master);
+    tone.start(context.currentTime + offset);
+    tone.stop(context.currentTime + offset + 0.21);
+  });
+
+  const noiseBuffer = context.createBuffer(1, Math.floor(context.sampleRate * 0.58), context.sampleRate);
+  const noise = noiseBuffer.getChannelData(0);
+  for (let index = 0; index < noise.length; index += 1) noise[index] = (Math.random() * 2 - 1) * (1 - index / noise.length);
+  const air = context.createBufferSource();
+  const airFilter = context.createBiquadFilter();
+  const airGain = context.createGain();
+  air.buffer = noiseBuffer;
+  airFilter.type = 'bandpass';
+  airFilter.frequency.value = 1450;
+  airFilter.Q.value = 0.65;
+  airGain.gain.setValueAtTime(0.001, context.currentTime + 0.38);
+  airGain.gain.exponentialRampToValueAtTime(0.34, context.currentTime + 0.45);
+  airGain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.95);
+  air.connect(airFilter).connect(airGain).connect(master);
+  air.start(context.currentTime + 0.38);
+  return new Promise((resolve) => window.setTimeout(() => { context.close(); resolve(); }, 1080));
+}
+
+async function enterMetroSaathi() {
+  if (!els.welcomeScreen) return;
+  els.enterApp.disabled = true;
+  els.welcomeScreen.classList.add('door-opening');
+  // Request GPS directly from the user's tap, before the door animation ends.
+  startLocation();
+  await playMetroDoorSound();
+  els.welcomeScreen.classList.add('leaving');
+  document.body.classList.remove('splash-active');
+  els.appShell?.removeAttribute('inert');
+  window.setTimeout(() => {
+    if (els.welcomeVideo) els.welcomeVideo.src = 'about:blank';
+    els.welcomeScreen.remove();
+  }, 560);
+}
 
 async function loadStations() {
   const response = await fetch('./kochi_metro_stations.json');
@@ -102,19 +161,22 @@ function updateStationCard(station, distanceKm) {
   els.crowdStation.textContent = station.station;
   els.guideStation.textContent = station.station;
   renderLine();
-  announce(station);
+  announce(station, true);
   refreshCrowd();
 }
 
 function announcement(station) {
-  const en = `Approaching ${station.station}. Nearest hospital: ${station.hospital}, ${station.hospital_walk_min} minutes. Nearest police station: ${station.police}, ${station.police_walk_min} minutes.`;
-  if (state.language === 'ml') return `അടുത്തെത്തുന്നത് ${station.station}. ഏറ്റവും അടുത്ത ആശുപത്രി: ${station.hospital}, ${station.hospital_walk_min} മിനിറ്റ്. ഏറ്റവും അടുത്ത പോലീസ് സ്റ്റേഷൻ: ${station.police}, ${station.police_walk_min} മിനിറ്റ്.`;
-  if (state.language === 'hi') return `${station.station} आ रहा है। निकटतम अस्पताल: ${station.hospital}, ${station.hospital_walk_min} मिनट। निकटतम पुलिस स्टेशन: ${station.police}, ${station.police_walk_min} मिनट।`;
+  const hospital = station.hospital.replace(/\s*-\s*~.*$/, '').split('/')[0].trim();
+  const police = station.police.replace(/\s*-\s*~.*$/, '').split('/')[0].trim();
+  const en = `Next stop, ${station.station}. For medical help, ${hospital} is about ${station.hospital_walk_min} minutes away. For police assistance, ${police} is nearby.`;
+  if (state.language === 'ml') return `അടുത്ത സ്റ്റേഷൻ, ${station.station}. ചികിത്സാ സഹായത്തിന് ${hospital}, ഏകദേശം ${station.hospital_walk_min} മിനിറ്റ് ദൂരം. പോലീസ് സഹായത്തിന് ${police} സമീപത്തുണ്ട്.`;
+  if (state.language === 'hi') return `अगला स्टेशन, ${station.station}। चिकित्सा सहायता के लिए ${hospital}, लगभग ${station.hospital_walk_min} मिनट दूर है। पुलिस सहायता के लिए ${police} पास में है।`;
   return en;
 }
 
 function announceWithBrowser(station, force = false) {
-  if (state.voiceMuted || !('speechSynthesis' in window) || (!force && station.station === state.lastSpoken)) return;
+  return new Promise((resolve) => {
+  if (state.voiceMuted || !('speechSynthesis' in window) || (!force && station.station === state.lastSpoken)) { resolve(); return; }
   state.lastSpoken = station.station;
   const language = { en: 'en-IN', ml: 'ml-IN', hi: 'hi-IN' }[state.language];
   const voices = speechSynthesis.getVoices();
@@ -124,57 +186,131 @@ function announceWithBrowser(station, force = false) {
   const utterance = new SpeechSynthesisUtterance(announcement(station));
   utterance.lang = voice?.lang || language;
   if (voice) utterance.voice = voice;
+  const finishBrowserVoice = () => { els.voiceVisualizer?.classList.remove('speaking'); resolve(); };
+  utterance.addEventListener('end', finishBrowserVoice, { once: true });
+  utterance.addEventListener('error', finishBrowserVoice, { once: true });
   speechSynthesis.cancel();
+  els.voiceVisualizer?.classList.add('speaking');
   speechSynthesis.speak(utterance);
+  });
 }
 
-async function announce(station, force = false) {
-  if (state.voiceMuted || (!force && station.station === state.lastSpoken)) return;
-  state.lastSpoken = station.station;
+function finishAnnouncement() {
+  state.voiceBusy = false;
+  if (state.voiceMuted || !state.pendingAnnouncement) return;
+  const pending = state.pendingAnnouncement;
+  state.pendingAnnouncement = null;
+  announce(pending.station, true);
+}
+
+function cancelAnnouncement() {
+  state.voiceRequestId = (state.voiceRequestId || 0) + 1;
+  state.voiceAbortController?.abort();
+  state.voiceAbortController = null;
   window.speechSynthesis?.cancel();
   if (state.voiceAudio) {
     state.voiceAudio.pause();
     URL.revokeObjectURL(state.voiceAudio.src);
     state.voiceAudio = null;
   }
-  els.voiceStatus.textContent = `Preparing natural ${state.language === 'ml' ? 'Malayalam' : state.language === 'hi' ? 'Hindi' : 'English'} voice…`;
+  state.voiceBusy = false;
+  state.pendingAnnouncement = null;
+  els.voiceVisualizer?.classList.remove('speaking');
+  if (state.audio) state.audio.master.gain.setTargetAtTime(0.13, state.audio.context.currentTime, 0.12);
+}
+
+async function announce(station, force = false, replaceCurrent = false) {
+  if (state.voiceMuted || (!force && station.station === state.lastSpoken)) return;
+  if (replaceCurrent && state.voiceBusy) cancelAnnouncement();
+  if (state.voiceBusy) {
+    state.pendingAnnouncement = { station };
+    els.voiceStatus.textContent = `Current announcement will finish · ${station.station} queued next`;
+    return;
+  }
+  state.voiceBusy = true;
+  state.lastSpoken = station.station;
+  state.voiceRequestId = (state.voiceRequestId || 0) + 1;
+  const requestId = state.voiceRequestId;
+  state.voiceAbortController?.abort();
+  state.voiceAbortController = new AbortController();
+  window.speechSynthesis?.cancel();
+  if (state.voiceAudio) {
+    state.voiceAudio.pause();
+    URL.revokeObjectURL(state.voiceAudio.src);
+    state.voiceAudio = null;
+    if (state.audio) state.audio.master.gain.setTargetAtTime(0.13, state.audio.context.currentTime, 0.08);
+  }
+  const voiceProfile = { ml: 'Malayalam · Marin', hi: 'Hindi · Coral', en: 'English · Cedar' }[state.language];
+  els.voiceStatus.textContent = `Preparing ${voiceProfile} voice…`;
   try {
     const response = await fetch('/api/speech', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: announcement(station), language: state.language }),
+      signal: state.voiceAbortController.signal,
     });
     if (!response.ok) {
       const problem = await response.json().catch(() => ({}));
       throw new Error(problem.error || `Speech returned ${response.status}`);
     }
-    const url = URL.createObjectURL(await response.blob());
+    const voiceEngine = response.headers.get('X-Voice-Engine');
+    const blob = await response.blob();
+    if (requestId !== state.voiceRequestId || state.voiceMuted) return;
+    const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     state.voiceAudio = audio;
     if (state.audio) state.audio.master.gain.setTargetAtTime(0.025, state.audio.context.currentTime, 0.08);
+    let restored = false;
     const restoreMusic = () => {
+      if (restored) return;
+      restored = true;
       if (state.audio) state.audio.master.gain.setTargetAtTime(0.13, state.audio.context.currentTime, 0.25);
       URL.revokeObjectURL(url);
       if (state.voiceAudio === audio) state.voiceAudio = null;
+      els.voiceVisualizer?.classList.remove('speaking');
+      finishAnnouncement();
     };
     audio.addEventListener('ended', restoreMusic, { once: true });
     audio.addEventListener('error', restoreMusic, { once: true });
     await audio.play();
-    els.voiceStatus.textContent = `Natural AI-generated ${state.language === 'ml' ? 'Malayalam' : state.language === 'hi' ? 'Hindi' : 'English'} voice`;
+    els.voiceVisualizer?.classList.add('speaking');
+    if (requestId !== state.voiceRequestId) { audio.pause(); restoreMusic(); return; }
+    els.voiceStatus.textContent = voiceEngine === 'gpt-audio-1.5'
+      ? `Expressive AI voice · ${voiceProfile}`
+      : `Standard AI voice fallback · ${voiceProfile}`;
   } catch (error) {
+    if (requestId !== state.voiceRequestId) return;
+    if (error.name === 'AbortError') { state.voiceBusy = false; return; }
     console.warn('Natural voice unavailable', error);
-    els.voiceStatus.textContent = `Natural voice unavailable · using browser fallback`;
-    announceWithBrowser(station, true);
+    if (state.voiceAudio) {
+      state.voiceAudio.pause();
+      URL.revokeObjectURL(state.voiceAudio.src);
+      state.voiceAudio = null;
+    }
+    if (state.audio) state.audio.master.gain.setTargetAtTime(0.13, state.audio.context.currentTime, 0.15);
+    els.voiceStatus.textContent = 'Expressive AI voice unavailable · browser robot voice disabled';
+    finishAnnouncement();
   }
 }
 
 function handlePosition(position) {
   const { latitude, longitude, accuracy } = position.coords;
+  if (![latitude, longitude, accuracy].every(Number.isFinite)) {
+    els.locationStatus.textContent = 'Invalid location reading · retrying';
+    els.locationStatus.className = 'status-pill error';
+    return;
+  }
   state.currentPosition = { latitude, longitude };
   els.locationStatus.title = `GPS ${latitude.toFixed(5)}, ${longitude.toFixed(5)} · accuracy ±${Math.round(accuracy)} m`;
-  if (state.manualStationLocked) {
-    els.locationStatus.textContent = `Manual · GPS ±${Math.round(accuracy)} m`;
-    els.locationStatus.className = 'status-pill';
+  if (accuracy > MAX_STATION_GPS_ACCURACY_M) {
+    els.locationStatus.textContent = `Location too approximate · ±${Math.round(accuracy)} m`;
+    els.locationStatus.className = 'status-pill error';
+    if (!state.nearest) {
+      els.stationName.textContent = 'Waiting for precise GPS';
+      els.stationDistance.textContent = 'Move near a window or open this app on a GPS-enabled phone';
+      els.rhythmStation.textContent = 'Station not confirmed';
+      els.rhythmDistance.textContent = 'Poor coordinates are not used for station detection';
+    }
     return;
   }
   const rawNearest = findNearestStation(latitude, longitude, stations);
@@ -228,6 +364,12 @@ function handlePosition(position) {
 
 function startLocation() {
   if (state.watchId != null) return;
+  if (!window.isSecureContext) {
+    els.locationStatus.textContent = 'GPS requires HTTPS or localhost';
+    els.locationStatus.className = 'status-pill error';
+    els.locationStatus.title = 'Open this app on https:// or on localhost. Browsers block GPS on ordinary HTTP network addresses.';
+    return;
+  }
   if (!navigator.geolocation) {
     els.locationStatus.textContent = 'GPS unavailable';
     return;
@@ -236,7 +378,7 @@ function startLocation() {
   state.watchId = navigator.geolocation.watchPosition(handlePosition, (error) => {
     els.locationStatus.textContent = error.code === 1 ? 'Location permission needed' : 'GPS unavailable';
     els.locationStatus.className = 'status-pill error';
-  }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
+  }, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
   els.locationToggle.textContent = '■ Stop location';
   els.locateBtn.textContent = '■ Stop location';
 }
@@ -667,7 +809,7 @@ async function startDemoRide() {
     if (!state.demoRunning) return;
     const direction = Number(els.demoDirection.value);
     const speed = Number(els.demoSpeed.value);
-    state.demoProgress += direction * 0.035 * speed;
+    state.demoProgress += direction * 0.018 * speed;
     if (state.demoProgress >= stations.length - 1 || state.demoProgress <= 0) {
       state.demoProgress = Math.max(0, Math.min(stations.length - 1, state.demoProgress));
       els.demoDirection.value = String(direction * -1);
@@ -792,6 +934,7 @@ function switchView(target) {
     const active = button.dataset.target === target;
     button.classList.toggle('active', active);
     button.setAttribute('aria-current', active ? 'page' : 'false');
+    if (active) button.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   });
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -800,10 +943,20 @@ function bindEvents() {
   els.locateBtn.addEventListener('click', toggleLocation);
   els.locationToggle.addEventListener('click', toggleLocation);
   els.routeBtn.addEventListener('click', handleRoute);
-  els.langSelect.addEventListener('change', () => { state.language = els.langSelect.value; if (state.nearest) announce(state.nearest, true); });
+  els.langSelect.addEventListener('change', () => {
+    state.language = els.langSelect.value;
+    if (state.nearest) announce(state.nearest, true, true);
+  });
   els.muteToggle.addEventListener('click', () => {
     state.voiceMuted = !state.voiceMuted;
     if (state.voiceMuted) speechSynthesis.cancel();
+    if (state.voiceMuted) {
+      state.voiceRequestId = (state.voiceRequestId || 0) + 1;
+      state.voiceAbortController?.abort();
+      state.voiceBusy = false;
+      state.pendingAnnouncement = null;
+      els.voiceVisualizer?.classList.remove('speaking');
+    }
     if (state.voiceMuted && state.voiceAudio) {
       state.voiceAudio.pause();
       URL.revokeObjectURL(state.voiceAudio.src);
@@ -828,23 +981,24 @@ function bindEvents() {
   els.crowdThreshold.addEventListener('change', refreshCrowd);
   els.manualStation.addEventListener('change', () => {
     if (els.manualStation.value === '') {
-      state.manualStationLocked = false;
       state.stationIndex = null;
       els.locationStatus.textContent = 'Automatic GPS';
+      startLocation();
       return;
     }
-    state.manualStationLocked = true;
     state.stationIndex = Number(els.manualStation.value);
     state.lineProgress = state.stationIndex;
     state.nearest = stations[state.stationIndex];
     updateStationCard(state.nearest, Number.NaN);
-    els.locationStatus.textContent = 'Manual station';
+    els.locationStatus.textContent = 'Station selected · GPS remains active';
     els.locationStatus.className = 'status-pill';
+    startLocation();
   });
   document.querySelectorAll('.nav-btn').forEach((button) => button.addEventListener('click', () => switchView(button.dataset.target)));
 }
 
 async function init() {
+  els.enterApp?.addEventListener('click', enterMetroSaathi);
   const savedTrainId = sessionStorage.getItem('metro-saathi-train-id');
   state.trainId = savedTrainId || `DEMO-TRAIN-${String(Math.floor(100 + Math.random() * 900))}`;
   sessionStorage.setItem('metro-saathi-train-id', state.trainId);
@@ -865,7 +1019,6 @@ async function init() {
   }
   state.crowdReports.push(...await seedCrowdDemo(isSupabaseConfigured));
   subscribeCrowd();
-  startLocation();
 }
 
 init();

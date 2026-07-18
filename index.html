@@ -11,8 +11,33 @@
   <link rel="stylesheet" href="./professional.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-<body>
-  <main class="app-shell">
+<body class="splash-active">
+  <section id="welcome-screen" class="welcome-screen" aria-labelledby="welcome-title">
+    <div class="welcome-video" aria-hidden="true">
+      <iframe
+        id="welcome-video"
+        src="https://www.youtube.com/embed/2P9frdBKUDU?autoplay=1&mute=1&controls=0&loop=1&playlist=2P9frdBKUDU&playsinline=1&rel=0&disablekb=1"
+        title="Kochi Metro introduction"
+        allow="autoplay; encrypted-media; picture-in-picture"
+        referrerpolicy="strict-origin-when-cross-origin"
+        tabindex="-1"></iframe>
+    </div>
+    <div class="welcome-shade" aria-hidden="true"></div>
+    <div class="welcome-content">
+      <div class="welcome-brand">
+        <div class="welcome-logo-shell"><img src="./assets/metro-logo.png" alt="Kochi Metro logo" class="welcome-logo"></div>
+        <p class="welcome-kicker">Your Kochi Metro companion</p>
+        <h1 id="welcome-title">Metro <span>Saathi</span></h1>
+        <p class="welcome-tagline">Every journey has a rhythm.</p>
+      </div>
+      <button id="enter-app" class="welcome-enter" type="button">
+        <span>Enter Metro Saathi</span><b aria-hidden="true">→</b>
+      </button>
+      <p class="welcome-note">Live location · Rhythm music · Station guidance</p>
+    </div>
+  </section>
+
+  <main id="app-shell" class="app-shell" inert>
     <header class="hero">
       <div class="brand-lockup">
         <div class="logo-shell"><img src="./assets/metro-logo.png" alt="Metro logo" class="brand-logo"></div>
@@ -52,7 +77,7 @@
           <div class="demo-console-head"><div><p class="eyebrow">Presentation mode</p><h3 id="demo-title">Demo Ride</h3></div><span id="demo-status" class="demo-status">Ready</span></div>
           <div class="demo-options">
             <label>Direction<select id="demo-direction"><option value="1">Towards Thrippunithura</option><option value="-1">Towards Aluva</option></select></label>
-            <label>Speed<select id="demo-speed"><option value="1">1× Realistic</option><option value="2">2× Showcase</option><option value="4">4× Fast demo</option></select></label>
+            <label>Speed<select id="demo-speed"><option value="0.5">0.5× Calm</option><option value="1" selected>1× Standard</option><option value="1.5">1.5× Showcase</option></select></label>
           </div>
           <div class="demo-actions"><button id="demo-toggle" class="primary-btn" type="button">▶ Start demo ride</button><button id="demo-exit" class="ghost-btn" type="button" hidden>Exit demo</button></div>
           <p class="microcopy">Simulates train movement, rail beats, crowds, alerts, music, and station announcements.</p>
@@ -87,7 +112,12 @@
 
     <section class="app-view" data-view="guide" aria-labelledby="guide-title" hidden>
       <section class="panel voice-panel">
-        <div><p class="eyebrow">Hands-free travel</p><h2 id="guide-title">Voice guidance</h2></div>
+        <div class="voice-heading"><div><p class="eyebrow">Hands-free travel</p><h2 id="guide-title">Voice of the Metro</h2></div><span class="voice-live-label">AI announcement</span></div>
+        <div id="voice-visualizer" class="voice-visualizer" aria-hidden="true">
+          <div class="voice-wave voice-wave-left"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="voice-logo-shell"><img src="./assets/metro-logo.png" alt="" class="voice-logo"></div>
+          <div class="voice-wave voice-wave-right"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        </div>
         <div class="view-station"><span>Now near</span><strong id="guide-station">Locating…</strong></div>
         <p class="helper">Station, hospital, and police information is announced when your nearest station changes.</p>
         <p id="voice-status" class="microcopy">Natural AI-generated voice · browser voice used only when offline</p>
@@ -96,7 +126,7 @@
     </section>
   </main>
 
-  <nav class="bottom-nav" aria-label="Main features">
+  <nav class="bottom-nav" aria-label="Swipe sideways through Metro Saathi features">
     <button class="nav-btn active" data-target="rhythm" type="button"><span>◉</span>Rhythm</button>
     <button class="nav-btn" data-target="journey" type="button"><span>⌁</span>Journey</button>
     <button class="nav-btn" data-target="crowd" type="button"><span>●</span>Crowd</button>

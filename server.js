@@ -55,22 +55,38 @@ async function speech(request, response) {
   try {
     const { text, language } = JSON.parse(raw);
     if (typeof text !== 'string' || !text.trim()) return json(response, 400, { error: 'Speech text is required' });
-    const languageName = { ml: 'Malayalam', hi: 'Hindi', en: 'Indian English' }[language] || 'Indian English';
-    const apiResponse = await fetch('https://api.openai.com/v1/audio/speech', {
+    const voiceProfiles = {
+      ml: { languageName: 'Malayalam', voice: 'marin', speed: 0.94, direction: 'Speak in authentic, fluent Kerala Malayalam. Use a warm human voice, gentle expression, natural breathing and short pauses, like a friendly Kochi Metro announcer. Pronounce Kochi place names carefully.' },
+      en: { languageName: 'Indian English', voice: 'cedar', speed: 0.93, direction: 'Speak in natural Indian English. Use a warm human voice with subtle expression, natural breathing and short pauses, like a friendly professional Kochi Metro announcer.' },
+      hi: { languageName: 'Hindi', voice: 'coral', speed: 0.94, direction: 'Speak in fluent, natural Hindi. Use a warm reassuring human voice, natural breathing and short pauses, like a friendly metro announcer. Pronounce place names carefully.' },
+    };
+    const profile = voiceProfiles[language] || voiceProfiles.en;
+    const expressiveResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'gpt-4o-mini-tts', voice: 'marin', input: text, response_format: 'mp3',
-        instructions: `Speak naturally and warmly in native ${languageName}, like a calm professional Kochi Metro announcer. Use authentic pronunciation, a measured pace, and no robotic cadence.`,
+        model: 'gpt-audio-1.5',
+        modalities: ['text', 'audio'],
+        audio: { voice: profile.voice, format: 'wav' },
+        messages: [{
+          role: 'user',
+          content: `${profile.direction}\n\nSay only the announcement below. Do not add an introduction or explanation. Let punctuation create natural pauses instead of using a repetitive reading cadence.\n\n${text.trim()}`,
+        }],
       }),
     });
-    if (!apiResponse.ok) {
-      const problem = await apiResponse.json().catch(() => ({}));
-      return json(response, apiResponse.status, { error: problem.error?.message || 'Speech generation failed' });
+    const result = await expressiveResponse.json().catch(() => ({}));
+    if (expressiveResponse.ok) {
+      const audioData = result.choices?.[0]?.message?.audio?.data;
+      if (audioData) {
+        const audio = Buffer.from(audioData, 'base64');
+        response.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': audio.length, 'Cache-Control': 'private, max-age=300', 'X-Voice-Engine': 'gpt-audio-1.5' });
+        response.end(audio);
+        return;
+      }
     }
-    const audio = Buffer.from(await apiResponse.arrayBuffer());
-    response.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Content-Length': audio.length, 'Cache-Control': 'private, max-age=300' });
-    response.end(audio);
+    return json(response, expressiveResponse.ok ? 502 : expressiveResponse.status, {
+      error: result.error?.message || 'Expressive AI voice did not return audio',
+    });
   } catch (error) {
     json(response, 500, { error: error.message || 'Speech generation failed' });
   }
