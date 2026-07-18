@@ -4,6 +4,8 @@
 .train-marker { position: absolute; z-index: 4; top: -37px; transform: translateX(-50%); font-size: 1.5rem; filter: drop-shadow(0 4px 8px rgba(0,0,0,.55)); animation: train-rock .7s ease-in-out infinite alternate; transition: left .9s ease-out; }
 .threshold-control { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 14px; color: var(--muted); font-size: .82rem; }
 .sensor-controls { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 9px; margin-bottom: 12px; }.sensor-controls label { display: grid; gap: 5px; color: var(--muted); font-size: .76rem; }.sensor-controls input { width: 100%; accent-color: var(--accent); }
+.tap-beat { min-width: 96px; border: 1px solid rgba(78,225,193,.35); color: var(--accent); }.tap-beat:active { transform: scale(.96); background: rgba(78,225,193,.22); }.manual-station { display: grid; gap: 6px; margin: 12px 0; color: var(--muted); font-size: .76rem; }.manual-station select { width: 100%; min-height: 46px; padding: 9px 12px; }
+.train-id { display: inline-block; margin-top: 6px; padding: 5px 9px; border: 1px solid rgba(85,148,255,.3); border-radius: 999px; background: rgba(85,148,255,.1); color: #a9c7ff; font-size: .68rem; font-weight: 800; letter-spacing: .06em; }
 .crowd-alert { padding: 14px; border: 1px solid rgba(255,105,133,.55); border-radius: 14px; background: rgba(120,44,67,.4); color: #ffd7df; font-weight: 800; animation: alert-pulse 1.2s ease-in-out infinite; }
 .crowd-alert[hidden] { display: none; }
 @keyframes train-rock { to { transform: translateX(-50%) translateY(-2px) rotate(2deg); } }

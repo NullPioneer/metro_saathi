@@ -45,9 +45,41 @@ async function compose(request, response) {
   }
 }
 
-const port = Number(process.env.PORT) || 8000;
+async function speech(request, response) {
+  if (!process.env.OPENAI_API_KEY) return json(response, 500, { error: 'OPENAI_API_KEY is missing from .env' });
+  let raw = '';
+  for await (const chunk of request) {
+    raw += chunk;
+    if (raw.length > 20_000) return json(response, 413, { error: 'Request too large' });
+  }
+  try {
+    const { text, language } = JSON.parse(raw);
+    if (typeof text !== 'string' || !text.trim()) return json(response, 400, { error: 'Speech text is required' });
+    const languageName = { ml: 'Malayalam', hi: 'Hindi', en: 'Indian English' }[language] || 'Indian English';
+    const apiResponse = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini-tts', voice: 'marin', input: text, response_format: 'mp3',
+        instructions: `Speak naturally and warmly in native ${languageName}, like a calm professional Kochi Metro announcer. Use authentic pronunciation, a measured pace, and no robotic cadence.`,
+      }),
+    });
+    if (!apiResponse.ok) {
+      const problem = await apiResponse.json().catch(() => ({}));
+      return json(response, apiResponse.status, { error: problem.error?.message || 'Speech generation failed' });
+    }
+    const audio = Buffer.from(await apiResponse.arrayBuffer());
+    response.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Content-Length': audio.length, 'Cache-Control': 'private, max-age=300' });
+    response.end(audio);
+  } catch (error) {
+    json(response, 500, { error: error.message || 'Speech generation failed' });
+  }
+}
+
+const port = Number(process.env.PORT) || 8123;
 http.createServer(async (request, response) => {
   if (request.method === 'POST' && request.url === '/api/compose-rhythm') return compose(request, response);
+  if (request.method === 'POST' && request.url === '/api/speech') return speech(request, response);
   const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
   const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
   const filePath = path.resolve(root, relative);

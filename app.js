@@ -3,6 +3,7 @@ import { supabase, isSupabaseConfigured } from './supabase-config.js';
 import { seedCrowdDemo } from './seed.js';
 
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
+const MAX_METRO_DISTANCE_KM = 5;
 let stations = [];
 
 const state = {
@@ -30,6 +31,11 @@ const els = {
   aiCompose: $('ai-compose'),
   locationToggle: $('location-toggle'), crowdThreshold: $('crowd-threshold'), crowdAlert: $('crowd-alert'),
   motionSensitivity: $('motion-sensitivity'), testBeat: $('test-beat'),
+  manualStation: $('manual-station'),
+  trainId: $('train-id'),
+  voiceStatus: $('voice-status'),
+  demoToggle: $('demo-toggle'), demoExit: $('demo-exit'), demoStatus: $('demo-status'),
+  demoDirection: $('demo-direction'), demoSpeed: $('demo-speed'),
 };
 
 async function loadStations() {
@@ -37,6 +43,7 @@ async function loadStations() {
   if (!response.ok) throw new Error(`Station data returned ${response.status}`);
   const payload = await response.json();
   stations = (payload.stations || payload).slice().sort((a, b) => a.order - b.order);
+  stations.forEach((station, index) => els.manualStation.add(new Option(station.station, String(index))));
 }
 
 function renderLine() {
@@ -82,7 +89,8 @@ function projectOntoMetroLine(latitude, longitude) {
 
 function updateStationCard(station, distanceKm) {
   els.stationName.textContent = station.station;
-  els.stationDistance.textContent = `${distanceKm.toFixed(2)} km from your position`;
+  const distanceLabel = Number.isFinite(distanceKm) ? `${distanceKm.toFixed(2)} km from your position` : 'Station selected manually';
+  els.stationDistance.textContent = distanceLabel;
   els.stationAttraction.textContent = station.attraction;
   els.hospitalName.textContent = station.hospital;
   els.hospitalTimes.textContent = `Walk ${station.hospital_walk_min} min · Auto ${station.hospital_auto_min} min`;
@@ -90,7 +98,7 @@ function updateStationCard(station, distanceKm) {
   els.policeTimes.textContent = `Walk ${station.police_walk_min} min · Auto ${station.police_auto_min} min`;
   els.routeOutput.textContent = 'Tap to find the hospital route.';
   els.rhythmStation.textContent = station.station;
-  els.rhythmDistance.textContent = `${distanceKm.toFixed(2)} km from your live position`;
+  els.rhythmDistance.textContent = Number.isFinite(distanceKm) ? `${distanceKm.toFixed(2)} km from your live position` : 'Manual station confirmation';
   els.crowdStation.textContent = station.station;
   els.guideStation.textContent = station.station;
   renderLine();
@@ -105,7 +113,7 @@ function announcement(station) {
   return en;
 }
 
-function announce(station, force = false) {
+function announceWithBrowser(station, force = false) {
   if (state.voiceMuted || !('speechSynthesis' in window) || (!force && station.station === state.lastSpoken)) return;
   state.lastSpoken = station.station;
   const language = { en: 'en-IN', ml: 'ml-IN', hi: 'hi-IN' }[state.language];
@@ -120,51 +128,91 @@ function announce(station, force = false) {
   speechSynthesis.speak(utterance);
 }
 
+async function announce(station, force = false) {
+  if (state.voiceMuted || (!force && station.station === state.lastSpoken)) return;
+  state.lastSpoken = station.station;
+  window.speechSynthesis?.cancel();
+  if (state.voiceAudio) {
+    state.voiceAudio.pause();
+    URL.revokeObjectURL(state.voiceAudio.src);
+    state.voiceAudio = null;
+  }
+  els.voiceStatus.textContent = `Preparing natural ${state.language === 'ml' ? 'Malayalam' : state.language === 'hi' ? 'Hindi' : 'English'} voice…`;
+  try {
+    const response = await fetch('/api/speech', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: announcement(station), language: state.language }),
+    });
+    if (!response.ok) {
+      const problem = await response.json().catch(() => ({}));
+      throw new Error(problem.error || `Speech returned ${response.status}`);
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const audio = new Audio(url);
+    state.voiceAudio = audio;
+    if (state.audio) state.audio.master.gain.setTargetAtTime(0.025, state.audio.context.currentTime, 0.08);
+    const restoreMusic = () => {
+      if (state.audio) state.audio.master.gain.setTargetAtTime(0.13, state.audio.context.currentTime, 0.25);
+      URL.revokeObjectURL(url);
+      if (state.voiceAudio === audio) state.voiceAudio = null;
+    };
+    audio.addEventListener('ended', restoreMusic, { once: true });
+    audio.addEventListener('error', restoreMusic, { once: true });
+    await audio.play();
+    els.voiceStatus.textContent = `Natural AI-generated ${state.language === 'ml' ? 'Malayalam' : state.language === 'hi' ? 'Hindi' : 'English'} voice`;
+  } catch (error) {
+    console.warn('Natural voice unavailable', error);
+    els.voiceStatus.textContent = `Natural voice unavailable · using browser fallback`;
+    announceWithBrowser(station, true);
+  }
+}
+
 function handlePosition(position) {
   const { latitude, longitude, accuracy } = position.coords;
-  if (accuracy > 180) {
-    els.locationStatus.textContent = `Weak GPS · ±${Math.round(accuracy)} m`;
-    els.locationStatus.className = 'status-pill error';
+  state.currentPosition = { latitude, longitude };
+  els.locationStatus.title = `GPS ${latitude.toFixed(5)}, ${longitude.toFixed(5)} · accuracy ±${Math.round(accuracy)} m`;
+  if (state.manualStationLocked) {
+    els.locationStatus.textContent = `Manual · GPS ±${Math.round(accuracy)} m`;
+    els.locationStatus.className = 'status-pill';
     return;
   }
-  state.currentPosition = { latitude, longitude };
   const rawNearest = findNearestStation(latitude, longitude, stations);
+  if (rawNearest.distanceKm > MAX_METRO_DISTANCE_KM) {
+    state.stationIndex = null;
+    state.lineProgress = null;
+    state.nearest = null;
+    els.locationStatus.textContent = 'Laptop location unreliable';
+    els.locationStatus.className = 'status-pill error';
+    els.stationName.textContent = 'Select your station manually';
+    els.stationDistance.textContent = `Browser estimate is ${rawNearest.distanceKm.toFixed(1)} km from the metro line`;
+    els.rhythmStation.textContent = 'Station not confirmed';
+    els.rhythmDistance.textContent = 'Use Journey → manual station';
+    els.crowdStation.textContent = 'Select a station';
+    els.guideStation.textContent = 'Select a station';
+    renderLine();
+    return;
+  }
+  const rawIndex = stations.indexOf(rawNearest.station);
   if (state.stationIndex == null) {
-    state.stationIndex = stations.indexOf(rawNearest.station);
-  }
-  let current = stations[state.stationIndex];
-  let currentDistance = haversineKm(latitude, longitude, current.lat, current.lng);
-  // If tracking resumes in a completely different area, safely reacquire once.
-  if (currentDistance > 2 && rawNearest.distanceKm + 0.4 < currentDistance) {
-    state.stationIndex = stations.indexOf(rawNearest.station);
-    current = stations[state.stationIndex];
-    currentDistance = rawNearest.distanceKm;
-  } else {
-    const adjacent = [state.stationIndex - 1, state.stationIndex + 1]
-      .filter((index) => index >= 0 && index < stations.length)
-      .map((index) => ({ index, distance: haversineKm(latitude, longitude, stations[index].lat, stations[index].lng) }))
-      .sort((a, b) => a.distance - b.distance)[0];
-    // Cross the geographic midpoint, plus 35 m of hysteresis, before changing.
-    if (adjacent && adjacent.distance + 0.035 < currentDistance) {
-      state.stationIndex = adjacent.index;
-      current = stations[state.stationIndex];
-      currentDistance = adjacent.distance;
+    state.stationIndex = rawIndex;
+  } else if (rawIndex !== state.stationIndex) {
+    if (state.gpsCandidateIndex === rawIndex) state.gpsCandidateCount = (state.gpsCandidateCount || 0) + 1;
+    else { state.gpsCandidateIndex = rawIndex; state.gpsCandidateCount = 1; }
+    if (state.gpsCandidateCount >= 2) {
+      state.stationIndex = rawIndex;
+      state.gpsCandidateIndex = null;
+      state.gpsCandidateCount = 0;
     }
+  } else {
+    state.gpsCandidateIndex = null;
+    state.gpsCandidateCount = 0;
   }
-  const neighborCandidates = [state.stationIndex - 1, state.stationIndex + 1]
-    .filter((index) => index >= 0 && index < stations.length)
-    .map((index) => ({ index, distance: haversineKm(latitude, longitude, stations[index].lat, stations[index].lng) }))
-    .sort((a, b) => a.distance - b.distance);
-  const next = neighborCandidates[0];
-  if (next) {
-    const ratio = currentDistance / Math.max(0.001, currentDistance + next.distance);
-    const rawProgress = state.stationIndex + Math.sign(next.index - state.stationIndex) * Math.min(0.49, ratio);
-    state.lineProgress = state.lineProgress == null ? rawProgress : state.lineProgress * 0.72 + rawProgress * 0.28;
-  } else state.lineProgress = state.stationIndex;
+  state.lineProgress = state.lineProgress == null ? state.stationIndex : state.lineProgress * 0.55 + state.stationIndex * 0.45;
   const trackedStation = stations[state.stationIndex];
   const result = { station: trackedStation, distanceKm: haversineKm(latitude, longitude, trackedStation.lat, trackedStation.lng) };
-  els.locationStatus.textContent = `Live · ±${Math.round(accuracy)} m`;
-  els.locationStatus.className = 'status-pill live';
+  els.locationStatus.textContent = `${accuracy > 180 ? 'Approximate' : 'Live'} · ±${Math.round(accuracy)} m`;
+  els.locationStatus.className = `status-pill ${accuracy > 180 ? 'error' : 'live'}`;
   const changed = result.station.station !== state.nearest?.station;
   state.nearest = result.station;
   state.nearestDistance = result.distanceKm;
@@ -196,6 +244,12 @@ function startLocation() {
 function stopLocation() {
   if (state.watchId != null) navigator.geolocation.clearWatch(state.watchId);
   state.watchId = null;
+  state.stationIndex = null;
+  state.lineProgress = null;
+  state.gpsCandidateIndex = null;
+  state.gpsCandidateCount = 0;
+  state.reacquireIndex = null;
+  state.reacquireCount = 0;
   els.locationStatus.textContent = 'GPS off';
   els.locationStatus.className = 'status-pill';
   els.locationToggle.textContent = '⌖ Start location';
@@ -263,6 +317,7 @@ function paintCrowd(reports) {
   const threshold = Number(els.crowdThreshold.value);
   const shouldAlert = reports.length > 0 && average >= threshold;
   els.crowdAlert.hidden = !shouldAlert;
+  if (shouldAlert) els.crowdAlert.textContent = `⚠ ${state.trainId} is crowded near ${state.nearest?.station || 'your station'} — ${status.label.toLowerCase()}.`;
   const alertKey = `${state.nearest?.station}:${status.tone}:${threshold}`;
   if (shouldAlert && state.lastCrowdAlert !== alertKey) {
     state.lastCrowdAlert = alertKey;
@@ -274,6 +329,11 @@ function paintCrowd(reports) {
 async function refreshCrowd() {
   if (!state.nearest) return;
   const stationName = state.nearest.station;
+  if (state.demoMode) {
+    paintCrowd(state.demoReports || []);
+    els.crowdMessage.textContent = `Demo crowd feed · ${state.trainId}`;
+    return;
+  }
   if (!isSupabaseConfigured) {
     paintCrowd(state.crowdReports.filter((row) => row.station === stationName && Date.now() - new Date(row.created_at) < FIFTEEN_MINUTES));
     els.crowdMessage.textContent = 'Demo data is stored on this device. Add Supabase credentials for shared live reports.';
@@ -294,6 +354,12 @@ async function reportCrowd(level) {
     return;
   }
   const row = { station: state.nearest.station, level, created_at: new Date().toISOString() };
+  if (state.demoMode) {
+    state.demoReports = [...(state.demoReports || []), row];
+    els.crowdMessage.textContent = 'Demo report added to this simulated train.';
+    paintCrowd(state.demoReports);
+    return;
+  }
   if (isSupabaseConfigured) {
     const { error } = await supabase.from('crowd_reports').insert({ station: row.station, level });
     els.crowdMessage.textContent = error ? 'Could not send report. Please retry.' : 'Thanks — your report is live.';
@@ -339,7 +405,7 @@ function motionPulse(event, forcedMagnitude = null) {
   state.motionSamples = [...(state.motionSamples || []), visualIntensity].slice(-240);
   els.motionIntensity.textContent = visualIntensity.toFixed(1);
   els.rhythmOrb.style.setProperty('--motion', `${1 + visualIntensity / 28}`);
-  state.audio.master.gain.setTargetAtTime(0.025 + Math.min(magnitude, 5) * 0.006, state.audio.context.currentTime, 0.08);
+  state.audio.master.gain.setTargetAtTime(0.11 + Math.min(magnitude, 5) * 0.018, state.audio.context.currentTime, 0.08);
   const sensitivity = Number(els.motionSensitivity.value);
   const manualThreshold = Math.max(0.035, 0.55 - sensitivity * 0.052);
   const adaptiveThreshold = Math.max(manualThreshold, (state.motionNoise || 0) * 1.3);
@@ -389,11 +455,103 @@ function motionPulse(event, forcedMagnitude = null) {
     const octave = index === 2 ? 2 : 1;
     oscillator.frequency.setTargetAtTime(recipe.rootHz * chord * octave, now, 0.35);
   });
+  if (state.beatCount >= 8 && !state.aiAutoRequested && state.beatIntervals?.length >= 4) {
+    state.aiAutoRequested = true;
+    els.motionHelp.textContent = 'Enough beats captured — AI is composing from this train rhythm…';
+    composeWithAI();
+  }
+  if (state.beatCount >= 8 && !state.capturedRhythmActive && state.beatIntervals?.length >= 4) {
+    startCapturedRhythm();
+  }
 }
 
-async function toggleMusic() {
+function startCapturedRhythm() {
+  state.rhythmPattern = state.beatIntervals.slice(-8).map((interval) => Math.max(180, Math.min(1100, interval)));
+  state.capturedRhythmActive = true;
+  state.rhythmStep = 0;
+  const playStep = () => {
+    if (!state.audio || !state.capturedRhythmActive) return;
+    const { context, master } = state.audio;
+    const recipe = state.composition || { rootHz: 73.42, intervals: [1, 1.5], waveforms: ['triangle', 'sine'] };
+    const step = state.rhythmStep % state.rhythmPattern.length;
+    const interval = recipe.intervals[step % recipe.intervals.length] || 1;
+    const now = context.currentTime;
+    const note = context.createOscillator();
+    const noteGain = context.createGain();
+    note.type = recipe.waveforms[step % recipe.waveforms.length] || 'triangle';
+    note.frequency.setValueAtTime(recipe.rootHz * interval * (step % 4 === 0 ? 2 : 1), now);
+    noteGain.gain.setValueAtTime(0.22, now);
+    noteGain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+    note.connect(noteGain).connect(master);
+    note.start(now); note.stop(now + 0.17);
+    state.rhythmStep += 1;
+    state.rhythmLoopTimer = setTimeout(playStep, state.rhythmPattern[step]);
+  };
+  playStep();
+  els.motionHelp.textContent = `Looping your captured ${state.rhythmPattern.length}-beat train rhythm. AI harmony is being applied.`;
+}
+
+function stopCapturedRhythm() {
+  clearTimeout(state.rhythmLoopTimer);
+  state.rhythmLoopTimer = null;
+  state.capturedRhythmActive = false;
+}
+
+async function startMicrophoneRhythm() {
+  if (!navigator.mediaDevices?.getUserMedia || !state.audio) return false;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+    if (!state.audio) { stream.getTracks().forEach((track) => track.stop()); return false; }
+    const source = state.audio.context.createMediaStreamSource(stream);
+    const analyser = state.audio.context.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.25;
+    source.connect(analyser); // Intentionally not connected to speakers: prevents feedback.
+    const samples = new Float32Array(analyser.fftSize);
+    state.microphone = { stream, source, analyser };
+    const listen = () => {
+      if (!state.audio || !state.microphone) return;
+      analyser.getFloatTimeDomainData(samples);
+      const rms = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
+      state.micBaseline = state.micBaseline == null ? rms : state.micBaseline * 0.965 + rms * 0.035;
+      const transient = Math.max(0, rms - state.micBaseline);
+      const sensitivity = Number(els.motionSensitivity.value);
+      const threshold = Math.max(0.006, 0.038 - sensitivity * 0.0032);
+      const intensity = Math.min(10, transient * 260);
+      els.motionIntensity.textContent = intensity.toFixed(1);
+      els.rhythmOrb.style.setProperty('--motion', `${1 + intensity / 28}`);
+      if (transient > threshold && performance.now() - (state.lastPulse || 0) > 160) {
+        motionPulse({}, Math.min(2.5, 0.55 + transient * 28));
+      }
+      state.microphoneFrame = requestAnimationFrame(listen);
+    };
+    listen();
+    els.motionStatus.textContent = 'Microphone listening';
+    els.motionStatus.className = 'status-pill live';
+    return true;
+  } catch (error) {
+    console.warn('Microphone rhythm unavailable', error);
+    return false;
+  }
+}
+
+function stopMicrophoneRhythm() {
+  if (state.microphoneFrame) cancelAnimationFrame(state.microphoneFrame);
+  state.microphone?.stream.getTracks().forEach((track) => track.stop());
+  state.microphone?.source.disconnect();
+  state.microphone = null;
+  state.microphoneFrame = null;
+  state.micBaseline = null;
+}
+
+async function toggleMusic(options = {}) {
+  const demoOnly = options?.demo === true;
   if (state.audio) {
     window.removeEventListener('devicemotion', state.motionHandler);
+    stopMicrophoneRhythm();
+    stopCapturedRhythm();
     await state.audio.context.close();
     state.audio = null;
     state.previousAcceleration = null;
@@ -405,7 +563,7 @@ async function toggleMusic() {
     els.motionIntensity.textContent = '0.0';
     return;
   }
-  if (typeof window.DeviceMotionEvent?.requestPermission === 'function') {
+  if (!demoOnly && typeof window.DeviceMotionEvent?.requestPermission === 'function') {
     if (await window.DeviceMotionEvent.requestPermission() !== 'granted') {
       els.motionHelp.textContent = 'Motion access was denied. Allow it in browser settings and retry.';
       return;
@@ -417,7 +575,7 @@ async function toggleMusic() {
   state.lastMotionEvent = null;
   state.previousAcceleration = null;
   state.motionNoise = null;
-  const master = context.createGain(); master.gain.value = 0.035; master.connect(context.destination);
+  const master = context.createGain(); master.gain.value = 0.13; master.connect(context.destination);
   const composition = state.composition || { rootHz: 73.42, intervals: [1, 1.5], waveforms: ['triangle', 'sine'], label: 'Metro ambient' };
   const oscillators = [];
   composition.intervals.slice(0, 3).forEach((interval, index) => {
@@ -429,21 +587,127 @@ async function toggleMusic() {
     oscillators.push(osc);
   });
   state.audio = { context, master, oscillators };
-  state.motionHandler = motionPulse;
-  window.addEventListener('devicemotion', state.motionHandler);
+  let microphoneActive = false;
+  if (!demoOnly) {
+    state.motionHandler = motionPulse;
+    window.addEventListener('devicemotion', state.motionHandler);
+    microphoneActive = await startMicrophoneRhythm();
+  }
   els.musicToggle.textContent = '■ Stop listening';
-  els.motionStatus.textContent = 'Listening live';
+  els.motionStatus.textContent = demoOnly ? 'Demo rhythm live' : microphoneActive ? 'Microphone listening' : 'Audio on';
   els.motionStatus.className = 'status-pill live';
-  els.motionHelp.textContent = 'Move with the train — rail movement now drives the beat.';
+  els.motionHelp.textContent = demoOnly ? 'Demo rail beats are now building a musical loop.' : 'Move with the train — rail movement now drives the beat.';
   setTimeout(() => {
-    if (state.audio && !state.lastMotionEvent) {
+    if (state.audio && !state.lastMotionEvent && !state.microphone) {
       els.motionStatus.textContent = 'Audio on · no sensor data';
       els.motionStatus.className = 'status-pill error';
       els.motionHelp.textContent = location.protocol !== 'https:' && location.hostname !== 'localhost'
         ? 'Motion sensing needs HTTPS. The ambient audio is still playing.'
-        : 'No motion events received. Check browser motion permissions; ambient audio is still playing.';
+        : 'No motion or microphone input received. Use TAP BEAT as a fallback.';
     }
   }, 3500);
+}
+
+function buildDemoCrowd(stationIndex) {
+  const base = stationIndex % 5 === 2 ? 3 : stationIndex % 3 === 0 ? 2 : 1;
+  state.demoReports = Array.from({ length: 6 }, (_, index) => ({
+    station: stations[stationIndex].station,
+    level: Math.max(1, Math.min(3, base + (index % 4 === 0 ? 1 : 0))),
+    created_at: new Date(Date.now() - index * 70_000).toISOString(),
+  }));
+}
+
+function scheduleDemoBeat() {
+  clearTimeout(state.demoBeatTimer);
+  if (!state.demoRunning) return;
+  const speed = Number(els.demoSpeed.value);
+  const interval = Math.max(190, (430 + Math.random() * 260) / Math.sqrt(speed));
+  state.demoBeatTimer = setTimeout(() => {
+    if (state.audio) motionPulse({}, 0.7 + Math.random() * 1.25);
+    scheduleDemoBeat();
+  }, interval);
+}
+
+async function startDemoRide() {
+  if (state.demoRunning) {
+    state.demoRunning = false;
+    clearInterval(state.demoJourneyTimer);
+    clearTimeout(state.demoBeatTimer);
+    els.demoToggle.textContent = '▶ Resume demo ride';
+    els.demoStatus.textContent = 'Paused';
+    return;
+  }
+  if (!state.demoMode) {
+    if (state.watchId != null) stopLocation();
+    state.demoMode = true;
+    state.liveTrainId = state.trainId;
+    state.trainId = 'DEMO-TRAIN-001';
+    els.trainId.textContent = `Demo · ${state.trainId}`;
+    const selected = els.manualStation.value === '' ? 0 : Number(els.manualStation.value);
+    state.demoProgress = selected;
+    state.stationIndex = selected;
+    state.lineProgress = selected;
+    state.nearest = stations[selected];
+    buildDemoCrowd(selected);
+    updateStationCard(state.nearest, Number.NaN);
+    els.demoExit.hidden = false;
+  }
+  if (!state.audio) await toggleMusic({ demo: true });
+  state.demoRunning = true;
+  els.demoToggle.textContent = 'Ⅱ Pause demo ride';
+  els.demoStatus.textContent = 'Running';
+  els.locationStatus.textContent = 'Demo simulation';
+  els.locationStatus.className = 'status-pill live';
+  scheduleDemoBeat();
+  clearInterval(state.demoJourneyTimer);
+  state.demoJourneyTimer = setInterval(() => {
+    if (!state.demoRunning) return;
+    const direction = Number(els.demoDirection.value);
+    const speed = Number(els.demoSpeed.value);
+    state.demoProgress += direction * 0.035 * speed;
+    if (state.demoProgress >= stations.length - 1 || state.demoProgress <= 0) {
+      state.demoProgress = Math.max(0, Math.min(stations.length - 1, state.demoProgress));
+      els.demoDirection.value = String(direction * -1);
+    }
+    state.lineProgress = state.demoProgress;
+    const nextIndex = Math.round(state.demoProgress);
+    if (nextIndex !== state.stationIndex) {
+      state.stationIndex = nextIndex;
+      state.nearest = stations[nextIndex];
+      buildDemoCrowd(nextIndex);
+      updateStationCard(state.nearest, Number.NaN);
+    } else {
+      els.stationDistance.textContent = 'Demo train moving between stations';
+      els.rhythmDistance.textContent = 'Simulated journey in progress';
+      renderLine();
+    }
+  }, 350);
+}
+
+function exitDemoRide() {
+  state.demoRunning = false;
+  state.demoMode = false;
+  clearInterval(state.demoJourneyTimer);
+  clearTimeout(state.demoBeatTimer);
+  state.demoJourneyTimer = null;
+  state.demoBeatTimer = null;
+  state.stationIndex = null;
+  state.lineProgress = null;
+  state.nearest = null;
+  state.trainId = state.liveTrainId || state.trainId;
+  els.trainId.textContent = `Train · ${state.trainId}`;
+  els.demoToggle.textContent = '▶ Start demo ride';
+  els.demoStatus.textContent = 'Ready';
+  els.demoExit.hidden = true;
+  els.locationStatus.textContent = 'GPS off';
+  els.locationStatus.className = 'status-pill';
+  els.stationName.textContent = 'Start location or select a station';
+  els.stationDistance.textContent = '';
+  els.rhythmStation.textContent = 'No station confirmed';
+  els.crowdStation.textContent = 'Select a station';
+  els.crowdBadge.textContent = 'Waiting for station';
+  els.crowdBadge.className = 'crowd-badge neutral';
+  renderLine();
 }
 
 async function composeWithAI() {
@@ -455,6 +719,7 @@ async function composeWithAI() {
   els.aiCompose.textContent = 'Composing from your ride…';
   const samples = state.motionSamples || [];
   const payload = {
+    trainId: state.trainId,
     station: state.nearest?.station || 'Kochi Metro',
     beatIntervals: state.beatIntervals.map(Math.round),
     averageMotion: samples.length ? samples.reduce((sum, value) => sum + value, 0) / samples.length : 0,
@@ -463,12 +728,18 @@ async function composeWithAI() {
   try {
     let data;
     try {
+      let localReached = false;
       const response = await fetch('/api/compose-rhythm', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
-      if (!response.ok) throw new Error('Local composer unavailable');
+      localReached = true;
+      if (!response.ok) {
+        const problem = await response.json().catch(() => ({}));
+        throw new Error(problem.error || `Composer returned ${response.status}`);
+      }
       data = await response.json();
-    } catch {
+    } catch (localError) {
+      if (localError.message !== 'Failed to fetch') throw localError;
       const result = await supabase.functions.invoke('compose-rhythm', { body: payload });
       if (result.error) throw result.error;
       data = result.data;
@@ -478,14 +749,32 @@ async function composeWithAI() {
       oscillator.type = data.waveforms[index] || 'sine';
       oscillator.frequency.setTargetAtTime(data.rootHz * (data.intervals[index] || 1), state.audio.context.currentTime, 0.7);
     });
+    playCompositionPreview(data);
     els.motionHelp.textContent = `AI composition ready: ${data.label}. It still follows your live train beats.`;
   } catch (error) {
     console.warn('AI composition failed', error);
-    els.motionHelp.textContent = 'AI composer is not deployed yet. Follow the README setup, then retry.';
+    els.motionHelp.textContent = `AI composer error: ${error.message || 'request failed'}`;
   } finally {
     els.aiCompose.disabled = false;
     els.aiCompose.textContent = '✦ Recompose from this ride';
   }
+}
+
+function playCompositionPreview(recipe) {
+  if (!state.audio) return;
+  const { context, master } = state.audio;
+  recipe.intervals.forEach((interval, index) => {
+    const start = context.currentTime + index * 0.18;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = recipe.waveforms[index] || 'sine';
+    oscillator.frequency.value = recipe.rootHz * interval * 2;
+    gain.gain.setValueAtTime(0.001, start);
+    gain.gain.exponentialRampToValueAtTime(0.32, start + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.42);
+    oscillator.connect(gain).connect(master);
+    oscillator.start(start); oscillator.stop(start + 0.45);
+  });
 }
 
 function switchView(target) {
@@ -510,6 +799,12 @@ function bindEvents() {
   els.muteToggle.addEventListener('click', () => {
     state.voiceMuted = !state.voiceMuted;
     if (state.voiceMuted) speechSynthesis.cancel();
+    if (state.voiceMuted && state.voiceAudio) {
+      state.voiceAudio.pause();
+      URL.revokeObjectURL(state.voiceAudio.src);
+      state.voiceAudio = null;
+      if (state.audio) state.audio.master.gain.setTargetAtTime(0.13, state.audio.context.currentTime, 0.2);
+    }
     els.muteToggle.textContent = state.voiceMuted ? '🔇 Unmute voice' : '🔊 Mute voice';
     els.muteToggle.setAttribute('aria-pressed', String(state.voiceMuted));
   });
@@ -522,12 +817,33 @@ function bindEvents() {
     }
   });
   els.aiCompose.addEventListener('click', composeWithAI);
+  els.demoToggle.addEventListener('click', startDemoRide);
+  els.demoExit.addEventListener('click', exitDemoRide);
   document.querySelectorAll('.crowd-btn').forEach((button) => button.addEventListener('click', () => reportCrowd(Number(button.dataset.level))));
   els.crowdThreshold.addEventListener('change', refreshCrowd);
+  els.manualStation.addEventListener('change', () => {
+    if (els.manualStation.value === '') {
+      state.manualStationLocked = false;
+      state.stationIndex = null;
+      els.locationStatus.textContent = 'Automatic GPS';
+      return;
+    }
+    state.manualStationLocked = true;
+    state.stationIndex = Number(els.manualStation.value);
+    state.lineProgress = state.stationIndex;
+    state.nearest = stations[state.stationIndex];
+    updateStationCard(state.nearest, Number.NaN);
+    els.locationStatus.textContent = 'Manual station';
+    els.locationStatus.className = 'status-pill';
+  });
   document.querySelectorAll('.nav-btn').forEach((button) => button.addEventListener('click', () => switchView(button.dataset.target)));
 }
 
 async function init() {
+  const savedTrainId = sessionStorage.getItem('metro-saathi-train-id');
+  state.trainId = savedTrainId || `DEMO-TRAIN-${String(Math.floor(100 + Math.random() * 900))}`;
+  sessionStorage.setItem('metro-saathi-train-id', state.trainId);
+  els.trainId.textContent = `Train · ${state.trainId}`;
   try {
     await loadStations();
     renderLine();
@@ -544,11 +860,6 @@ async function init() {
   }
   state.crowdReports.push(...await seedCrowdDemo(isSupabaseConfigured));
   subscribeCrowd();
-  if ('speechSynthesis' in window) {
-    speechSynthesis.addEventListener('voiceschanged', () => {
-      if (state.nearest && !state.voiceMuted) announce(state.nearest, true);
-    });
-  }
   startLocation();
 }
 

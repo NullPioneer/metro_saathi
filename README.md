@@ -12,7 +12,15 @@ Geolocation and device motion require a secure context. Use a local static serve
 node server.js
 ```
 
-Then open `http://localhost:8000` and allow location access.
+Then open `http://localhost:8123` and allow location access.
+
+### Laptop use inside the metro
+
+Laptops generally have no GPS or accelerometer. Browser location may be a rough Wi-Fi/IP estimate, so confirm the current station manually in the Journey view. Rhythm automatically requests microphone access on a laptop and detects transients from rail and coach sounds; headphones help prevent the generated music from feeding back into the microphone. `TAP BEAT` remains available as a manual rhythm input.
+
+The displayed `DEMO-TRAIN-###` value is a ride-session identifier for the hackathon interface, not an official KMRL vehicle number. An official train ID would require access to Kochi Metro operational data.
+
+Station guidance uses OpenAI text-to-speech for natural English, Malayalam, and Hindi announcements. The interface discloses that this is an AI-generated voice. Browser speech synthesis is retained only as an offline fallback.
 
 ## Enable shared crowd reports
 

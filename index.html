@@ -5,20 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#07111f">
   <title>Metro Saathi</title>
+  <link rel="icon" type="image/png" href="./assets/metro-logo.png">
   <link rel="stylesheet" href="./style.css">
   <link rel="stylesheet" href="./ride-controls.css">
+  <link rel="stylesheet" href="./professional.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <main class="app-shell">
     <header class="hero">
-      <div><p class="eyebrow">Kochi Metro companion</p><h1>Metro Saathi</h1></div>
+      <div class="brand-lockup">
+        <div class="logo-shell"><img src="./assets/metro-logo.png" alt="Metro logo" class="brand-logo"></div>
+        <div class="brand-copy"><p class="eyebrow">Kochi Metro companion</p><h1>Metro Saathi</h1><p class="brand-tagline">Move smarter. Ride together.</p><span id="train-id" class="train-id">Train · assigning…</span></div>
+      </div>
       <div class="location-controls"><span id="location-status" class="status-pill">GPS off</span><button id="location-toggle" class="status-pill location-toggle" type="button">⌖ Start location</button></div>
     </header>
 
     <section class="app-view active" data-view="rhythm" aria-labelledby="rhythm-title">
       <section class="panel rhythm-hero">
-        <div class="panel-heading"><div><p class="eyebrow">Movement becomes music</p><h2 id="rhythm-title">Live metro rhythm</h2></div><span id="motion-status" class="status-pill">Sensor off</span></div>
+        <div class="panel-heading"><div><p class="eyebrow">Movement becomes music</p><h2 id="rhythm-title">Your journey has a sound</h2></div><span id="motion-status" class="status-pill">Sensor off</span></div>
         <div id="rhythm-orb" class="rhythm-orb" aria-hidden="true"><span></span><i></i></div>
         <div class="rhythm-stats">
           <div><strong id="motion-intensity">0.0</strong><span>motion</span></div>
@@ -27,12 +32,12 @@
         </div>
         <div class="sensor-controls">
           <label for="motion-sensitivity">Beat sensitivity <input id="motion-sensitivity" type="range" min="1" max="10" value="8"></label>
-          <button id="test-beat" class="ghost-btn" type="button">Test beat</button>
+          <button id="test-beat" class="ghost-btn tap-beat" type="button">TAP BEAT</button>
         </div>
         <p class="helper rhythm-copy">Place your phone securely. Every rail jolt and acceleration spike shapes the percussion while a soft drone follows the ride.</p>
         <button id="music-toggle" class="primary-btn music-cta" type="button">▶ Start listening to the train</button>
         <button id="ai-compose" class="ghost-btn" type="button">✦ Compose from this ride with AI</button>
-        <p id="motion-help" class="microcopy" aria-live="polite">Tap once to allow sound and motion access. Increase sensitivity if train vibrations are gentle.</p>
+        <p id="motion-help" class="microcopy" aria-live="polite">On laptops, allow microphone access so rail sounds can drive the beat. Phones can also use motion.</p>
       </section>
       <section class="panel now-card"><span class="live-dot"></span><div><p class="eyebrow">Your train now</p><h2 id="rhythm-station">Locating nearest station…</h2><p id="rhythm-distance" class="helper"></p></div></section>
     </section>
@@ -40,6 +45,18 @@
     <section class="app-view" data-view="journey" aria-labelledby="journey-title" hidden>
       <section class="panel line-panel">
         <div class="panel-heading"><div><p class="eyebrow">All 25 stations</p><h2 id="journey-title">Where is my train?</h2></div><button id="locate-btn" class="ghost-btn" type="button">⌖ Start location</button></div>
+        <label class="manual-station" for="manual-station">Laptop location is approximate — confirm your station
+          <select id="manual-station"><option value="">Use automatic GPS</option></select>
+        </label>
+        <div class="demo-console" aria-labelledby="demo-title">
+          <div class="demo-console-head"><div><p class="eyebrow">Presentation mode</p><h3 id="demo-title">Demo Ride</h3></div><span id="demo-status" class="demo-status">Ready</span></div>
+          <div class="demo-options">
+            <label>Direction<select id="demo-direction"><option value="1">Towards Thrippunithura</option><option value="-1">Towards Aluva</option></select></label>
+            <label>Speed<select id="demo-speed"><option value="1">1× Realistic</option><option value="2">2× Showcase</option><option value="4">4× Fast demo</option></select></label>
+          </div>
+          <div class="demo-actions"><button id="demo-toggle" class="primary-btn" type="button">▶ Start demo ride</button><button id="demo-exit" class="ghost-btn" type="button" hidden>Exit demo</button></div>
+          <p class="microcopy">Simulates train movement, rail beats, crowds, alerts, music, and station announcements.</p>
+        </div>
         <div class="line-scroll"><ol id="metro-line" class="metro-line" aria-label="Kochi Metro stations from Aluva to Thrippunithura"></ol></div>
         <p class="scroll-hint">Your nearest station pulses in yellow · swipe for the full line</p>
       </section>
@@ -61,7 +78,7 @@
         <label class="threshold-control" for="crowd-threshold">Alert me when crowd is
           <select id="crowd-threshold"><option value="2.5">High</option><option value="1.5">Medium or higher</option></select>
         </label>
-        <div id="crowd-alert" class="crowd-alert" role="alert" hidden>⚠ Crowd level is above your alert threshold.</div>
+        <div id="crowd-alert" class="crowd-alert" role="alert" hidden>⚠ This train is crowded.</div>
         <p class="helper">How crowded is your coach right now?</p>
         <div class="crowd-buttons"><button class="crowd-btn low" data-level="1" type="button">●<span>Low</span></button><button class="crowd-btn medium" data-level="2" type="button">●<span>Medium</span></button><button class="crowd-btn high" data-level="3" type="button">●<span>High</span></button></div>
         <p id="crowd-message" class="microcopy" aria-live="polite"></p>
@@ -73,6 +90,7 @@
         <div><p class="eyebrow">Hands-free travel</p><h2 id="guide-title">Voice guidance</h2></div>
         <div class="view-station"><span>Now near</span><strong id="guide-station">Locating…</strong></div>
         <p class="helper">Station, hospital, and police information is announced when your nearest station changes.</p>
+        <p id="voice-status" class="microcopy">Natural AI-generated voice · browser voice used only when offline</p>
         <div class="controls"><label for="lang-select">Language <select id="lang-select"><option value="en">English</option><option value="ml">മലയാളം</option><option value="hi">हिन्दी</option></select></label><button id="mute-toggle" class="ghost-btn" type="button" aria-pressed="false">🔊 Mute voice</button></div>
       </section>
     </section>

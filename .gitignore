@@ -6,3 +6,6 @@
 # Local Supabase files
 .supabase/
 supabase/.temp/
+
+# Generated image extraction intermediates
+assets/*-key.png
