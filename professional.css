@@ -47,6 +47,16 @@ body {
 .tap-beat { color: #dced6a; border-color: rgba(199,221,34,.3); background: rgba(199,221,34,.07); }
 
 .line-panel { background: linear-gradient(145deg, rgba(13,34,47,.98), rgba(7,20,30,.98)); }
+.demo-console { position: relative; z-index: 2; margin: 16px 0 6px; padding: 15px; border: 1px solid rgba(199,221,34,.18); border-radius: 18px; background: linear-gradient(145deg, rgba(199,221,34,.07), rgba(10,184,177,.055)); }
+.demo-console-head, .demo-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.demo-console-head h3 { margin: 0; color: var(--text); font-size: 1.05rem; text-transform: none; letter-spacing: 0; }
+.demo-status { padding: 6px 9px; border-radius: 999px; color: #dced6a; background: rgba(199,221,34,.1); font-size: .7rem; font-weight: 800; }
+.demo-options { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin: 12px 0; }
+.demo-options label { display: grid; gap: 5px; color: var(--muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; }
+.demo-options select { width: 100%; min-height: 43px; padding: 8px; border: 1px solid rgba(255,255,255,.07); }
+.demo-actions { margin-bottom: 10px; }
+.demo-actions .primary-btn { flex: 1; width: auto; }
+.demo-actions .ghost-btn { flex: 0 0 auto; }
 .metro-line::before { background: linear-gradient(90deg, #0ab8b1, #c7dd22); box-shadow: 0 0 16px rgba(10,184,177,.2); }
 .station-stop.active .station-dot { background: #c7dd22; box-shadow: 0 0 0 7px rgba(199,221,34,.13), 0 0 20px rgba(199,221,34,.35); }
 .info-grid article, .view-station { background: rgba(255,255,255,.035); border-color: rgba(255,255,255,.065); }
@@ -74,6 +84,7 @@ body {
   .location-controls { position: absolute; right: 0; top: 7px; transform: scale(.9); transform-origin: top right; }
   .brand-lockup { padding-right: 88px; }
   .rhythm-hero { min-height: 560px; }
+  .demo-options { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -20,6 +20,10 @@ Laptops generally have no GPS or accelerometer. Browser location may be a rough 
 
 The displayed `DEMO-TRAIN-###` value is a ride-session identifier for the hackathon interface, not an official KMRL vehicle number. An official train ID would require access to Kochi Metro operational data.
 
+### Demo Ride mode
+
+Open Journey and use Demo Ride when testing outside the metro. Choose a direction and speed, then start the simulation. It moves the train across all 25 stations, generates rail beats for the music engine, triggers AI composition after enough beats, changes crowd conditions, exercises threshold alerts, and announces station changes. Pause/resume and exit controls are included; all simulated data is visibly labelled as demo data.
+
 Station guidance uses OpenAI text-to-speech for natural English, Malayalam, and Hindi announcements. The interface discloses that this is an AI-generated voice. Browser speech synthesis is retained only as an offline fallback.
 
 ## Enable shared crowd reports

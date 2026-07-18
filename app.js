@@ -652,7 +652,10 @@ async function startDemoRide() {
     updateStationCard(state.nearest, Number.NaN);
     els.demoExit.hidden = false;
   }
-  if (!state.audio) await toggleMusic({ demo: true });
+  if (!state.audio) {
+    state.demoStartedAudio = true;
+    await toggleMusic({ demo: true });
+  }
   state.demoRunning = true;
   els.demoToggle.textContent = 'Ⅱ Pause demo ride';
   els.demoStatus.textContent = 'Running';
@@ -684,13 +687,15 @@ async function startDemoRide() {
   }, 350);
 }
 
-function exitDemoRide() {
+async function exitDemoRide() {
   state.demoRunning = false;
   state.demoMode = false;
   clearInterval(state.demoJourneyTimer);
   clearTimeout(state.demoBeatTimer);
   state.demoJourneyTimer = null;
   state.demoBeatTimer = null;
+  if (state.demoStartedAudio && state.audio) await toggleMusic({ demo: true });
+  state.demoStartedAudio = false;
   state.stationIndex = null;
   state.lineProgress = null;
   state.nearest = null;
