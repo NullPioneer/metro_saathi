@@ -640,7 +640,11 @@ function stopCapturedRhythm() {
 }
 
 async function startMicrophoneRhythm() {
-  if (!navigator.mediaDevices?.getUserMedia || !state.audio) return false;
+  state.microphoneError = null;
+  if (!navigator.mediaDevices?.getUserMedia || !state.audio) {
+    state.microphoneError = 'unavailable';
+    return false;
+  }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
@@ -675,6 +679,7 @@ async function startMicrophoneRhythm() {
     return true;
   } catch (error) {
     console.warn('Microphone rhythm unavailable', error);
+    state.microphoneError = error.name === 'NotAllowedError' ? 'denied' : error.name || 'unavailable';
     return false;
   }
 }
@@ -705,10 +710,12 @@ async function toggleMusic(options = {}) {
     els.motionIntensity.textContent = '0.0';
     return;
   }
+  state.motionPermissionDenied = false;
   if (!demoOnly && typeof window.DeviceMotionEvent?.requestPermission === 'function') {
-    if (await window.DeviceMotionEvent.requestPermission() !== 'granted') {
-      els.motionHelp.textContent = 'Motion access was denied. Allow it in browser settings and retry.';
-      return;
+    try {
+      state.motionPermissionDenied = await window.DeviceMotionEvent.requestPermission() !== 'granted';
+    } catch {
+      state.motionPermissionDenied = true;
     }
   }
   const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -738,14 +745,24 @@ async function toggleMusic(options = {}) {
   els.musicToggle.textContent = '■ Stop listening';
   els.motionStatus.textContent = demoOnly ? 'Demo rhythm live' : microphoneActive ? 'Microphone listening' : 'Audio on';
   els.motionStatus.className = 'status-pill live';
-  els.motionHelp.textContent = demoOnly ? 'Demo rail beats are now building a musical loop.' : 'Move with the train — rail movement now drives the beat.';
+  els.motionHelp.textContent = demoOnly
+    ? 'Demo rail beats are now building a musical loop.'
+    : microphoneActive
+      ? 'Microphone is listening for rail clicks and carriage vibration. Motion is used too when available.'
+      : 'Listening for device movement. Microphone rhythm input is not available.';
   setTimeout(() => {
     if (state.audio && !state.lastMotionEvent && !state.microphone) {
-      els.motionStatus.textContent = 'Audio on · no sensor data';
+      els.motionStatus.textContent = 'Ambient audio only';
       els.motionStatus.className = 'status-pill error';
-      els.motionHelp.textContent = location.protocol !== 'https:' && location.hostname !== 'localhost'
-        ? 'Motion sensing needs HTTPS. The ambient audio is still playing.'
-        : 'No motion or microphone input received. Use TAP BEAT as a fallback.';
+      if (!window.isSecureContext) {
+        els.motionHelp.textContent = 'Sensors require HTTPS or localhost. The ambient layer is still playing.';
+      } else if (state.microphoneError === 'denied') {
+        els.motionHelp.textContent = 'Microphone permission is blocked. Allow it in the address bar, then stop and restart listening.';
+      } else if (state.motionPermissionDenied) {
+        els.motionHelp.textContent = 'Motion permission was denied and microphone input is unavailable. Enable either permission or use TAP BEAT.';
+      } else {
+        els.motionHelp.textContent = 'This laptop has no motion sensor and no microphone input was available. Allow microphone access or use TAP BEAT.';
+      }
     }
   }, 3500);
 }
