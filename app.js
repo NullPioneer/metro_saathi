@@ -4,7 +4,6 @@ import { seedCrowdDemo } from './seed.js';
 
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
 const MAX_METRO_DISTANCE_KM = 5;
-const MAX_STATION_GPS_ACCURACY_M = 500;
 let stations = [];
 
 const state = {
@@ -24,7 +23,7 @@ const els = {
   locationStatus: $('location-status'), metroLine: $('metro-line'), stationName: $('station-name'),
   stationDistance: $('station-distance'), stationAttraction: $('station-attraction'), hospitalName: $('hospital-name'),
   hospitalTimes: $('hospital-times'), policeName: $('police-name'), policeTimes: $('police-times'),
-  routeBtn: $('route-btn'), routeOutput: $('route-output'), crowdBadge: $('crowd-badge'),
+  routeOutput: $('route-output'), crowdBadge: $('crowd-badge'),
   crowdMessage: $('crowd-message'), langSelect: $('lang-select'), muteToggle: $('mute-toggle'),
   musicToggle: $('music-toggle'), locateBtn: $('locate-btn'), motionStatus: $('motion-status'),
   motionIntensity: $('motion-intensity'), beatCount: $('beat-count'), beatTempo: $('beat-tempo'),
@@ -294,6 +293,8 @@ async function announce(station, force = false, replaceCurrent = false) {
 }
 
 function handlePosition(position) {
+  if (position.timestamp && position.timestamp < (state.lastPositionTimestamp || 0)) return;
+  state.lastPositionTimestamp = position.timestamp || Date.now();
   const { latitude, longitude, accuracy } = position.coords;
   if (![latitude, longitude, accuracy].every(Number.isFinite)) {
     els.locationStatus.textContent = 'Invalid location reading · retrying';
@@ -302,30 +303,20 @@ function handlePosition(position) {
   }
   state.currentPosition = { latitude, longitude };
   els.locationStatus.title = `GPS ${latitude.toFixed(5)}, ${longitude.toFixed(5)} · accuracy ±${Math.round(accuracy)} m`;
-  if (accuracy > MAX_STATION_GPS_ACCURACY_M) {
-    els.locationStatus.textContent = `Location too approximate · ±${Math.round(accuracy)} m`;
-    els.locationStatus.className = 'status-pill error';
-    if (!state.nearest) {
-      els.stationName.textContent = 'Waiting for precise GPS';
-      els.stationDistance.textContent = 'Move near a window or open this app on a GPS-enabled phone';
-      els.rhythmStation.textContent = 'Station not confirmed';
-      els.rhythmDistance.textContent = 'Poor coordinates are not used for station detection';
-    }
-    return;
-  }
   const rawNearest = findNearestStation(latitude, longitude, stations);
   if (rawNearest.distanceKm > MAX_METRO_DISTANCE_KM) {
     state.stationIndex = null;
     state.lineProgress = null;
     state.nearest = null;
-    els.locationStatus.textContent = 'Laptop location unreliable';
+    els.locationStatus.textContent = 'Outside Kochi Metro area';
     els.locationStatus.className = 'status-pill error';
-    els.stationName.textContent = 'Select your station manually';
-    els.stationDistance.textContent = `Browser estimate is ${rawNearest.distanceKm.toFixed(1)} km from the metro line`;
-    els.rhythmStation.textContent = 'Station not confirmed';
-    els.rhythmDistance.textContent = 'Use Journey → manual station';
+    els.stationName.textContent = `Nearest: ${rawNearest.station.station}`;
+    els.stationDistance.textContent = `${rawNearest.distanceKm.toFixed(1)} km away · Chrome location is outside the metro corridor`;
+    els.rhythmStation.textContent = `Nearest metro: ${rawNearest.station.station}`;
+    els.rhythmDistance.textContent = `${rawNearest.distanceKm.toFixed(1)} km from Chrome location · not confirmed as your station`;
     els.crowdStation.textContent = 'Select a station';
     els.guideStation.textContent = 'Select a station';
+    els.routeOutput.textContent = `You appear outside the metro area. ${rawNearest.station.station} is the nearest station.`;
     renderLine();
     return;
   }
@@ -347,7 +338,7 @@ function handlePosition(position) {
   state.lineProgress = state.lineProgress == null ? state.stationIndex : state.lineProgress * 0.55 + state.stationIndex * 0.45;
   const trackedStation = stations[state.stationIndex];
   const result = { station: trackedStation, distanceKm: haversineKm(latitude, longitude, trackedStation.lat, trackedStation.lng) };
-  els.locationStatus.textContent = `${accuracy > 180 ? 'Approximate' : 'Live'} · ±${Math.round(accuracy)} m`;
+  els.locationStatus.textContent = `${accuracy > 180 ? 'Chrome approximate' : 'Chrome GPS live'} · ±${Math.round(accuracy)} m`;
   els.locationStatus.className = `status-pill ${accuracy > 180 ? 'error' : 'live'}`;
   const changed = result.station.station !== state.nearest?.station;
   state.nearest = result.station;
@@ -375,10 +366,14 @@ function startLocation() {
     return;
   }
   els.locationStatus.textContent = 'Finding you…';
-  state.watchId = navigator.geolocation.watchPosition(handlePosition, (error) => {
-    els.locationStatus.textContent = error.code === 1 ? 'Location permission needed' : 'GPS unavailable';
+  const locationOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 };
+  const handleLocationError = (error) => {
+    if (state.currentPosition && error.code !== 1) return;
+    els.locationStatus.textContent = error.code === 1 ? 'Allow location in Chrome' : error.code === 3 ? 'Chrome GPS timed out · retrying' : 'Chrome GPS unavailable';
     els.locationStatus.className = 'status-pill error';
-  }, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
+  };
+  navigator.geolocation.getCurrentPosition(handlePosition, handleLocationError, locationOptions);
+  state.watchId = navigator.geolocation.watchPosition(handlePosition, handleLocationError, locationOptions);
   els.locationToggle.textContent = '■ Stop location';
   els.locateBtn.textContent = '■ Stop location';
 }
@@ -403,43 +398,48 @@ function toggleLocation() {
   if (state.watchId == null) startLocation(); else stopLocation();
 }
 
-function hospitalSearch(station) {
-  return station.hospital.replace(/\s*-\s*~.*$/, '').replace(/\s*\/.*$/, '');
+function routePlace(station, kind) {
+  const value = station[kind] || '';
+  return value.replace(/\s*-\s*~.*$/, '').split('/')[0].split(' - ')[0].trim();
 }
 
-async function handleRoute() {
+async function handleRoute(kind, button) {
   if (!state.nearest || !state.currentPosition) {
     els.routeOutput.textContent = 'Enable location first.';
     return;
   }
   const station = state.nearest;
-  els.routeBtn.disabled = true;
-  els.routeOutput.textContent = 'Finding a live route…';
+  button.disabled = true;
+  const label = kind === 'police' ? 'police station' : kind;
+  els.routeOutput.textContent = `Finding a live route to the ${label}…`;
   try {
-    // The supplied station file has no hospital coordinates. Use a Maps place query;
+    // The supplied station file currently has place names but no destination coordinates. Use a Maps place query;
     // if future data adds coordinates, the live OSRM route is used automatically.
-    if (Number.isFinite(station.hospital_lat) && Number.isFinite(station.hospital_lng)) {
-      const route = await getLiveRoute(state.currentPosition.latitude, state.currentPosition.longitude, station.hospital_lat, station.hospital_lng, 'walking');
+    const latitude = station[`${kind}_lat`];
+    const longitude = station[`${kind}_lng`];
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      const route = await getLiveRoute(state.currentPosition.latitude, state.currentPosition.longitude, latitude, longitude, 'walking');
       if (route) {
-        els.routeOutput.textContent = `${route.distanceKm} km · ${route.durationMin} min walk`;
+        els.routeOutput.textContent = `${route.distanceKm} km · ${route.durationMin} min walk to ${routePlace(station, kind)}`;
         return;
       }
-      showMapLink(mapsDeepLink(station.hospital_lat, station.hospital_lng, 'walking'));
+      showMapLink(mapsDeepLink(latitude, longitude, 'walking'), label);
       return;
     }
-    const destination = encodeURIComponent(`${hospitalSearch(station)}, Kochi, Kerala`);
-    showMapLink(`https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=walking`);
+    const origin = `${state.currentPosition.latitude},${state.currentPosition.longitude}`;
+    const destination = encodeURIComponent(`${routePlace(station, kind)}, near ${station.station} Metro Station, Kochi, Kerala`);
+    showMapLink(`https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=walking`, label);
   } finally {
-    els.routeBtn.disabled = false;
+    button.disabled = false;
   }
 }
 
-function showMapLink(href) {
+function showMapLink(href, label = 'destination') {
   const link = document.createElement('a');
   link.href = href;
   link.target = '_blank';
   link.rel = 'noopener noreferrer';
-  link.textContent = 'Open in Google Maps ↗';
+  link.textContent = `Open ${label} route in Google Maps ↗`;
   els.routeOutput.replaceChildren(link);
 }
 
@@ -959,7 +959,7 @@ function switchView(target) {
 function bindEvents() {
   els.locateBtn.addEventListener('click', toggleLocation);
   els.locationToggle.addEventListener('click', toggleLocation);
-  els.routeBtn.addEventListener('click', handleRoute);
+  document.querySelectorAll('.mini-route-btn').forEach((button) => button.addEventListener('click', () => handleRoute(button.dataset.routeKind, button)));
   els.langSelect.addEventListener('change', () => {
     state.language = els.langSelect.value;
     if (state.nearest) announce(state.nearest, true, true);

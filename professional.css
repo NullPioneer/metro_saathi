@@ -41,7 +41,17 @@ body.splash-active { overflow: hidden; }
 @keyframes welcome-leave { to { opacity: 0; transform: scale(1.035); visibility: hidden; } }
 
 @media (min-width: 760px) {
-  .welcome-content { justify-content: center; padding-left: 44px; }
+  .welcome-content {
+    width: min(calc(100vw - 32px), 70dvh);
+    justify-content: center;
+    padding-inline: clamp(24px, 4dvh, 38px);
+  }
+  .welcome-brand h1 {
+    max-width: 100%;
+    font-size: clamp(2.7rem, min(5vw, 8.5dvh), 4.8rem);
+    white-space: nowrap;
+  }
+  .welcome-enter, .welcome-note { width: 100%; max-width: none; }
 }
 
 @media (max-width: 759px) {
@@ -207,4 +217,158 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .voice-visualizer.speaking .voice-wave i { animation: none; opacity: .8; }
+}
+
+/* Cinematic catalogue-inspired internal interface */
+body:not(.splash-active) {
+  background: #000;
+}
+body:not(.splash-active) .app-shell {
+  width: min(100%, 1180px);
+}
+body:not(.splash-active) .hero {
+  min-height: 92px;
+  margin-bottom: 2px;
+  padding: 12px 18px;
+  border-bottom: 1px solid #2a2a2a;
+  background: #121212;
+  border-radius: 0 0 14px 14px;
+}
+body:not(.splash-active) .logo-shell {
+  width: 64px;
+  height: 64px;
+  border: 0;
+  border-radius: 10px;
+  background: #f5c518;
+  box-shadow: none;
+}
+body:not(.splash-active) .brand-logo { width: 76px; height: 76px; }
+body:not(.splash-active) .brand-copy .eyebrow { color: #aaa; }
+body:not(.splash-active) .brand-copy h1 {
+  color: #fff;
+  font-size: clamp(1.65rem, 5vw, 2.2rem);
+  letter-spacing: -.04em;
+}
+body:not(.splash-active) .brand-tagline { color: #b3b3b3; }
+body:not(.splash-active) .train-id {
+  border: 0;
+  border-radius: 5px;
+  color: #111;
+  background: #f5c518;
+  font-weight: 900;
+}
+body:not(.splash-active) .location-controls {
+  border-color: #333;
+  border-radius: 9px;
+  background: #1f1f1f;
+  backdrop-filter: none;
+}
+body:not(.splash-active) .location-toggle { background: #2b2b2b; }
+
+body:not(.splash-active) .app-view > .panel {
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  background: #121212;
+  box-shadow: none;
+}
+body:not(.splash-active) .app-view > .panel::before {
+  top: 20px;
+  left: 0;
+  width: 4px;
+  height: 30px;
+  border-radius: 0 4px 4px 0;
+  background: #f5c518;
+}
+body:not(.splash-active) .app-view > .panel::after { display: none; }
+body:not(.splash-active) .panel-heading,
+body:not(.splash-active) .station-heading { padding-left: 5px; }
+body:not(.splash-active) .panel h2 { color: #f5f5f5; }
+body:not(.splash-active) .eyebrow { color: #f5c518; }
+body:not(.splash-active) .helper,
+body:not(.splash-active) .microcopy,
+body:not(.splash-active) .meta,
+body:not(.splash-active) .distance { color: #aaa; }
+
+body:not(.splash-active) .rhythm-hero {
+  background: linear-gradient(135deg, #191919, #0c0c0c);
+}
+body:not(.splash-active) .rhythm-orb {
+  background: radial-gradient(circle, rgba(245,197,24,.19), rgba(255,255,255,.025) 48%, transparent 70%);
+}
+body:not(.splash-active) .rhythm-orb span {
+  background: #f5c518;
+  box-shadow: 0 0 42px rgba(245,197,24,.22);
+}
+body:not(.splash-active) .rhythm-stats div,
+body:not(.splash-active) .info-grid article,
+body:not(.splash-active) .view-station,
+body:not(.splash-active) .demo-console {
+  border-color: #303030;
+  border-radius: 8px;
+  background: #1b1b1b;
+}
+body:not(.splash-active) .rhythm-stats strong { color: #f5c518; }
+
+body:not(.splash-active) .primary-btn {
+  min-height: 48px;
+  border-radius: 7px;
+  color: #111;
+  background: #f5c518;
+  box-shadow: none;
+  font-weight: 900;
+}
+body:not(.splash-active) .primary-btn:hover { filter: brightness(1.08); }
+body:not(.splash-active) .ghost-btn {
+  border-color: #383838;
+  border-radius: 7px;
+  background: #292929;
+}
+body:not(.splash-active) select { border: 1px solid #3b3b3b; background: #222; }
+
+body:not(.splash-active) .metro-line::before { background: #555; box-shadow: none; }
+body:not(.splash-active) .station-stop.active .station-dot {
+  background: #f5c518;
+  box-shadow: 0 0 0 6px rgba(245,197,24,.14);
+}
+body:not(.splash-active) .station-stop.active .station-label { color: #f5c518; }
+body:not(.splash-active) .info-icon { color: #f5c518; background: rgba(245,197,24,.1); }
+
+body:not(.splash-active) .voice-visualizer {
+  border-color: #303030;
+  border-radius: 10px;
+  background: radial-gradient(circle, #242424, #151515 68%);
+}
+body:not(.splash-active) .voice-logo-shell { border-radius: 15px; }
+body:not(.splash-active) .voice-wave i { background: #f5c518; }
+body:not(.splash-active) .voice-live-label { color: #f5c518; border-color: #443b17; background: #211e11; }
+
+body:not(.splash-active) .bottom-nav {
+  width: min(calc(100% - 24px), 760px);
+  gap: 5px;
+  border: 1px solid #333;
+  border-radius: 10px;
+  background: rgba(18,18,18,.97);
+  box-shadow: 0 8px 30px rgba(0,0,0,.55);
+  backdrop-filter: none;
+}
+body:not(.splash-active) .nav-btn {
+  border: 0;
+  border-radius: 6px;
+  color: #aaa;
+  background: transparent;
+}
+body:not(.splash-active) .nav-btn span { color: #aaa; }
+body:not(.splash-active) .nav-btn.active {
+  color: #111;
+  background: #f5c518;
+  box-shadow: none;
+}
+body:not(.splash-active) .nav-btn.active span { color: #111; }
+body:not(.splash-active) .nav-btn.active::after { display: none; }
+
+@media (max-width: 560px) {
+  body:not(.splash-active) .hero { padding-inline: 12px; }
+  body:not(.splash-active) .logo-shell { width: 54px; height: 54px; }
+  body:not(.splash-active) .brand-logo { width: 65px; height: 65px; }
+  body:not(.splash-active) .app-view > .panel { border-radius: 10px; }
 }

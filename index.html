@@ -88,11 +88,11 @@
       <section class="panel station-card" aria-live="polite">
         <div class="station-heading"><div><p class="eyebrow">Nearest station</p><h2 id="station-name">Finding you…</h2></div><span id="station-distance" class="distance"></span></div>
         <div class="info-grid">
-          <article><span class="info-icon">✦</span><div><h3>Nearby attraction</h3><p id="station-attraction">Waiting for location…</p></div></article>
-          <article><span class="info-icon hospital">+</span><div><h3>Nearest hospital</h3><p id="hospital-name">—</p><p id="hospital-times" class="meta">—</p></div></article>
-          <article><span class="info-icon police">◆</span><div><h3>Nearest police</h3><p id="police-name">—</p><p id="police-times" class="meta">—</p></div></article>
+          <article><span class="info-icon">✦</span><div><h3>Nearby attraction</h3><p id="station-attraction">Waiting for location…</p><button class="mini-route-btn" data-route-kind="attraction" type="button">Directions ↗</button></div></article>
+          <article><span class="info-icon hospital">+</span><div><h3>Nearest hospital</h3><p id="hospital-name">—</p><p id="hospital-times" class="meta">—</p><button class="mini-route-btn" data-route-kind="hospital" type="button">Directions ↗</button></div></article>
+          <article><span class="info-icon police">◆</span><div><h3>Nearest police</h3><p id="police-name">—</p><p id="police-times" class="meta">—</p><button class="mini-route-btn" data-route-kind="police" type="button">Directions ↗</button></div></article>
         </div>
-        <div class="route-row"><button id="route-btn" class="primary-btn" type="button">Get hospital route</button><div id="route-output" class="route-output" aria-live="polite">Route will appear here.</div></div>
+        <div class="route-row"><div id="route-output" class="route-output" aria-live="polite">Choose a destination for live directions.</div></div>
       </section>
     </section>
 
